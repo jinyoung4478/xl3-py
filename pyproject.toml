@@ -1,11 +1,26 @@
 [project]
 name = "xtl-py"
-version = "0.1.0a0"
+version = "0.1.0a1"
 description = "XTL (Excel Template Language) 0.1 — Python reference implementation"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "jinyoung4478", email = "skswls0@daum.net" }]
 requires-python = ">=3.11"
+keywords = ["excel", "template", "xlsx", "openpyxl", "xtl", "xl3"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "openpyxl>=3.1,<4",
     "PyYAML>=6,<7",
@@ -15,7 +30,9 @@ dependencies = [
 xl3-py-runner = "xl3.runner.__main__:main"
 
 [project.urls]
+Homepage = "https://github.com/jinyoung4478/xl3"
 Spec = "https://github.com/jinyoung4478/xl3"
+Issues = "https://github.com/jinyoung4478/xl3/issues"
 
 [dependency-groups]
 dev = [
