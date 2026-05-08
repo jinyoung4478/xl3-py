@@ -17,6 +17,27 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 ---
 
+## Status (2026-05-08)
+
+All 5 findings below were filed as
+[xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) on 2026-05-08
+and **resolved upstream the same day** in PR #2 (commit `79b08aa`,
+`fix: xl3-py issue #1 batch — '=' operator, U+FEFF whitespace, 1e-6 cutoff`).
+The xl3 spec was subsequently cut as **0.1.0** (release 1.0.0-rc.1 → 0.1.0).
+
+| # | Finding | Disposition |
+|---|---|---|
+| #1 | 1e-4 vs 1e-6 cutoff | **FIXED** — ADR-0009 + language.md corrected to `[1e-6, 1e21)`; new fixture 096 pins boundary |
+| #2 | U+FEFF in trim | **FIXED** — TS `isEmpty` pre-replaces zero-width before trim; new fixture 095 pins behavior |
+| #3 | Python `repr(float)` | **DOCUMENTED** — `xl3/PORTERS_GUIDE.md` "Language-specific gotchas" |
+| #4 | Naive datetime / UTC | **DOCUMENTED** — same section |
+| #5 | TS IF normalizer omits `=` | **FIXED** — `normalizer.ts` op list adds `['=', 'eq']`; fixture 048 expected re-authored |
+
+The Python port now passes **91 / 91 stage-1 fixtures (5 stage-2 skipped)**.
+Entries below are kept for historical record.
+
+---
+
 ## #1. ECMA-262 scientific-notation cutoff is `1e-6`, not `1e-4`
 
 **Where**: `spec/language.md` "Canonical String Form"; `spec/decisions/0009-comparison-and-string-coercion.md` §"Canonical string form".

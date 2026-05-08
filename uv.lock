@@ -367,8 +367,8 @@ wheels = [
 ]
 
 [[package]]
-name = "xl3"
-version = "0.1.0a0"
+name = "xtl-py"
+version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "openpyxl" },

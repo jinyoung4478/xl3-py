@@ -9,11 +9,12 @@ TypeScript reference impl as portability validation: if both implementations
 produce identical output for the same conformance corpus, the spec is real.
 
 - **Spec & TS reference**: <https://github.com/jinyoung4478/xl3>
-- **Conformance status**: **88 / 89 stage-1 fixtures passing (98.9%)**.
-  The single remaining failure (`048-if-and-comparison-boundaries`) is a
-  documented TS-impl bug where the IF-condition normalizer omits `=` from
-  its operator table — see `PORTING_NOTES.md` and
-  [issue #1](https://github.com/jinyoung4478/xl3/issues/1) for details.
+  (XTL spec **0.1.0** released 2026-05-08).
+- **Conformance status**: **91 / 91 stage-1 fixtures passing (100%)** —
+  5 stage-2 fixtures skipped (canonical OOXML comparison out of scope for v0.1).
+  The 5 spec/impl ambiguities found while building this port were filed as
+  [xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) and resolved
+  upstream the same day; see `PORTING_NOTES.md`.
 
 ## Install
 
@@ -109,11 +110,11 @@ python -m xl3.runner --id-prefix 050
 Output sample:
 
 ```
-xl3-py 0.1.0a0 — XTL 0.1 (stage 1)
+xl3-py 0.1.0a2 — XTL 0.1 (stage 1)
   pass   001-bracket-substitution
   pass   002-if-function
   ...
-summary: 88/89 passed, 1 failed, 5 skipped
+summary: 91/91 passed, 0 failed, 5 skipped
 ```
 
 ## What is supported
