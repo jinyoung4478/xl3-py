@@ -10,11 +10,41 @@ Three fixture kinds (mutually exclusive):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+
+
+def _lenient_yaml_load(text: str) -> Any:
+    """yaml.safe_load with a recovery pass for values that begin with a
+    YAML "reserved" indicator (``` ` ```, ``@``). PyYAML rejects such
+    bare scalars; xl3 fixtures sometimes start ``description:`` with
+    a backtick-wrapped term — pre-quote those lines and retry. Other
+    YAML libraries (js-yaml, ruamel) accept them; this keeps xl3-py
+    parity without touching the corpus."""
+    try:
+        return yaml.safe_load(text) or {}
+    except yaml.scanner.ScannerError:
+        fixed = _quote_reserved_starts(text)
+        return yaml.safe_load(fixed) or {}
+
+
+_RESERVED_LEAD = re.compile(r"^(\s*[A-Za-z_][\w-]*:\s+)([`@][^\n]*)$", re.MULTILINE)
+
+
+def _quote_reserved_starts(text: str) -> str:
+    """Wrap any `key: <reserved-lead>...` line in double quotes, escaping
+    embedded double quotes. Leaves already-quoted values alone."""
+
+    def repl(m: re.Match[str]) -> str:
+        prefix, value = m.group(1), m.group(2)
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'{prefix}"{escaped}"'
+
+    return _RESERVED_LEAD.sub(repl, text)
 
 FixtureKind = Literal["static", "error", "dynamic"]
 
@@ -86,7 +116,7 @@ def load_fixture(fixture_dir: Path) -> Fixture:
     if not meta_path.exists():
         raise FixtureLoadError(f"{fixture_id}: missing meta.yaml")
     with meta_path.open("r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+        meta = _lenient_yaml_load(f.read())
     if not isinstance(meta, dict):
         raise FixtureLoadError(f"{fixture_id}: meta.yaml must be a mapping at the top level")
 

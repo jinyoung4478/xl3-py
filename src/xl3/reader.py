@@ -33,6 +33,33 @@ class SourceData:
     rows: list[dict[str, Any]] = field(default_factory=list)
 
 
+def _merge_master_for(
+    ws: Any, row: int, col: int
+) -> tuple[int, int] | None:
+    """If (row, col) sits inside a merged range, return the master's (row, col).
+    Returns None if not in any merge. ADR-0033/0035: porter MUST identify
+    merges from merge-region metadata, not from cell-value presence —
+    openpyxl returns None on slaves, ExcelJS returns the master's value.
+    """
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row <= row <= mr.max_row and mr.min_col <= col <= mr.max_col:
+            return (mr.min_row, mr.min_col)
+    return None
+
+
+def _is_horizontal_merge_slave(
+    ws: Any, row: int, col: int
+) -> bool:
+    """A cell is a horizontal-merge slave of the active header column if it
+    sits inside a merged range whose master column is *to the left*. Per
+    ADR-0033, such cells are transparent: they contribute no column and do
+    not trigger duplicate-name."""
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row <= row <= mr.max_row and mr.min_col <= col <= mr.max_col:
+            return mr.min_col != col
+    return False
+
+
 def _cell_value(cell: Cell) -> Any:
     """Extract a cell's source value per ADR-0017.
 
@@ -216,28 +243,30 @@ def _read_with_inferred_span(
     formula_view: _FormulaView | None,
 ) -> SourceData:
     """Row-shorthand form: header row is N; column span = first..last
-    non-empty header cell on that row."""
-    header_cells: list[Cell] = (
-        list(ws[header_row]) if ws.max_row and ws.max_row >= header_row else []
-    )
+    non-empty header cell on that row. ADR-0033: a header that is a
+    horizontal-merge slave inherits the master's value (master is to the
+    left), so the span includes such cells. We detect non-emptiness via the
+    master-anchored read, not via raw cell value."""
+    if not ws.max_row or ws.max_row < header_row:
+        return SourceData(sheet_name=sheet_name)
     first_idx: int | None = None
     last_idx: int | None = None
-    for i, c in enumerate(header_cells):
-        if not is_empty(_cell_value(c)):
+    for col_idx in range(1, ws.max_column + 1):
+        text = _header_cell_text_with_merges(ws, header_row, col_idx)
+        if text is not None and text.strip() != "":
             if first_idx is None:
-                first_idx = i
-            last_idx = i
+                first_idx = col_idx
+            last_idx = col_idx
     if first_idx is None:
         return SourceData(sheet_name=sheet_name)
-    headers = _read_header_row(
-        ws, sheet_name, header_row, first_idx + 1, last_idx + 1, formula_view  # type: ignore[operator]
+    headers, col_indices = _read_header_row(
+        ws, sheet_name, header_row, first_idx, last_idx, formula_view  # type: ignore[arg-type]
     )
     rows = _read_data_rows(
         ws,
         sheet_name,
         header_row,
-        first_idx + 1,  # type: ignore[operator]
-        last_idx + 1,  # type: ignore[operator]
+        col_indices,
         headers,
         end_row=None,
         formula_view=formula_view,
@@ -251,15 +280,14 @@ def _read_with_explicit_range(
     rng: "_RangeSelector",
     formula_view: _FormulaView | None,
 ) -> SourceData:
-    headers = _read_header_row(
+    headers, col_indices = _read_header_row(
         ws, sheet_name, rng.header_row, rng.left_col, rng.right_col, formula_view
     )
     rows = _read_data_rows(
         ws,
         sheet_name,
         rng.header_row,
-        rng.left_col,
-        rng.right_col,
+        col_indices,
         headers,
         end_row=rng.end_row,
         formula_view=formula_view,
@@ -274,23 +302,39 @@ def _read_header_row(
     left_col: int,
     right_col: int,
     formula_view: _FormulaView | None,
-) -> list[str]:
-    """ADR-0017 effective text: rich-text concatenated, formula cached results."""
+) -> tuple[list[str], list[int]]:
+    """ADR-0017 effective text + ADR-0033 merged-header transparency.
+
+    Iterates `left_col..right_col`. For each column index:
+      - If the cell is a horizontal-merge slave (master in a different
+        column inside the header band), skip it. It contributes neither
+        a header name nor a data column.
+      - Otherwise, read the master-anchored value (handles vertical and
+        2D merges where the header row falls on a slave row but the
+        master is in an earlier row of the same column).
+
+    Returns (headers, col_indices) so the data-row reader knows which
+    physical columns to read for each logical column.
+    """
     headers: list[str] = []
+    col_indices: list[int] = []
     seen: set[str] = set()
     for col_idx in range(left_col, right_col + 1):
-        cell = ws.cell(row=header_row, column=col_idx)
-        v = _header_cell_text(cell)
+        if _is_horizontal_merge_slave(ws, header_row, col_idx):
+            continue
+        v = _header_cell_text_with_merges(ws, header_row, col_idx)
         if (v is None or v.strip() == "") and formula_view is not None:
-            if formula_view.is_uncached_formula(sheet_name, header_row, col_idx):
+            master = _merge_master_for(ws, header_row, col_idx)
+            mrow, mcol = master if master is not None else (header_row, col_idx)
+            if formula_view.is_uncached_formula(sheet_name, mrow, mcol):
                 raise xtl_error(
                     "xl3/cell/formula-no-cache",
-                    f"Formula cell {get_column_letter(col_idx)}{header_row} has no cached result",
+                    f"Formula cell {get_column_letter(mcol)}{mrow} has no cached result",
                 )
         if v is None or v.strip() == "":
             raise xtl_error(
                 "xl3/source/missing-header",
-                f"source_table header cell {get_column_letter(col_idx)}{header_row} is empty",
+                f"source_table header cell {get_column_letter(col_idx)}{header_row} is empty (merged header band: no master in window)",
             )
         name = v.strip()
         if name in seen:
@@ -300,7 +344,19 @@ def _read_header_row(
             )
         seen.add(name)
         headers.append(name)
-    return headers
+        col_indices.append(col_idx)
+    return headers, col_indices
+
+
+def _header_cell_text_with_merges(ws: Any, row: int, col: int) -> str | None:
+    """Read header text from a cell, dereferencing merges (ADR-0033)."""
+    master = _merge_master_for(ws, row, col)
+    if master is not None:
+        mrow, mcol = master
+        cell = ws.cell(row=mrow, column=mcol)
+    else:
+        cell = ws.cell(row=row, column=col)
+    return _header_cell_text(cell)
 
 
 def _header_cell_text(cell: Cell) -> str | None:
@@ -321,23 +377,40 @@ def _read_data_rows(
     ws: Any,
     sheet_name: str,
     header_row: int,
-    left_col: int,
-    right_col: int,
+    col_indices: list[int],
     headers: list[str],
     end_row: int | None,
     formula_view: _FormulaView | None,
 ) -> list[dict[str, Any]]:
+    """Iterate data rows starting at header_row+1. For each kept (master)
+    column, read the master value of any merged range (ADR-0035 broadcast).
+
+    Subtlety: if the header band spans multiple rows (2D merge), the
+    first data row is the row immediately AFTER the entire header band
+    ends. We compute that by finding the bottom of any merge whose top
+    is the header_row.
+    """
     rows: list[dict[str, Any]] = []
+    first_data_row = header_row + 1
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row == header_row and mr.max_row >= first_data_row:
+            first_data_row = max(first_data_row, mr.max_row + 1)
     last_row = end_row if end_row is not None else (ws.max_row or header_row)
-    for r in range(header_row + 1, last_row + 1):
+    for r in range(first_data_row, last_row + 1):
         row_dict: dict[str, Any] = {}
         row_empty = True
-        for offset, col_name in enumerate(headers):
-            col_idx = left_col + offset
-            cell = ws.cell(row=r, column=col_idx)
+        for col_name, col_idx in zip(headers, col_indices, strict=True):
+            master = _merge_master_for(ws, r, col_idx)
+            if master is not None:
+                mrow, mcol = master
+                cell = ws.cell(row=mrow, column=mcol)
+                read_row, read_col = mrow, mcol
+            else:
+                cell = ws.cell(row=r, column=col_idx)
+                read_row, read_col = r, col_idx
             val = _cell_value(cell)
             if val is None and formula_view is not None:
-                if formula_view.is_uncached_formula(sheet_name, r, col_idx):
+                if formula_view.is_uncached_formula(sheet_name, read_row, read_col):
                     raise xtl_error(
                         "xl3/cell/formula-no-cache",
                         f"Formula cell {cell.coordinate} has no cached result",
