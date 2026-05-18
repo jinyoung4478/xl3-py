@@ -79,6 +79,11 @@ class JoinDirective:
     primary_column: str
 
 
+@dataclass
+class GroupDirective:
+    keys: list[str]
+
+
 Directive = (
     FilterDirective
     | SortDirective
@@ -86,6 +91,7 @@ Directive = (
     | RepeatRightDirective
     | SourceDirective
     | JoinDirective
+    | GroupDirective
 )
 
 
@@ -123,6 +129,8 @@ def parse_directive(body: str) -> Directive:
         return _parse_source(rest)
     if name == "join":
         return _parse_join(rest)
+    if name == "group":
+        return _parse_group(rest)
     raise DirectiveParseError(f"unknown directive @{name}")
 
 
@@ -259,6 +267,23 @@ def _parse_join(rest: str) -> JoinDirective:
     )
 
 
+def _parse_group(rest: str) -> GroupDirective:
+    if rest.strip() == "":
+        raise DirectiveParseError("@group requires at least one column key")
+    parts = [p.strip() for p in rest.split(",") if p.strip()]
+    if not parts:
+        raise DirectiveParseError("@group requires at least one column key")
+    keys: list[str] = []
+    for part in parts:
+        m = re.fullmatch(r"\[\s*([^\]\r\n]+?)\s*\]", part, re.DOTALL)
+        if not m:
+            raise DirectiveParseError(
+                f"@group key must be a [Column] reference; got {part!r}"
+            )
+        keys.append(m.group(1).strip())
+    return GroupDirective(keys=keys)
+
+
 # ---------------------------------------------------------------------------
 # Row-set transform pipeline
 # ---------------------------------------------------------------------------
@@ -274,6 +299,7 @@ class BlockDirectives:
     sorts: list[SortDirective] = field(default_factory=list)
     top: TopDirective | None = None
     repeat_right: RepeatRightDirective | None = None
+    group: GroupDirective | None = None
     raw: list[Directive] = field(default_factory=list)
 
     def add(self, d: Directive) -> None:
@@ -290,6 +316,8 @@ class BlockDirectives:
             self.top = d
         elif isinstance(d, RepeatRightDirective):
             self.repeat_right = d
+        elif isinstance(d, GroupDirective):
+            self.group = d
 
 
 def apply_filters(

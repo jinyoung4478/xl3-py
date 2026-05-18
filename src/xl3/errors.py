@@ -24,6 +24,8 @@ XtlErrorCode = Literal[
     "xl3/inputs/conflict-config",
     "xl3/inputs/missing-header",
     "xl3/inputs/missing-options",
+    "xl3/inputs/forward-reference",
+    "xl3/inputs/runtime-only-fn",
     # Sources (ADR-0012)
     "xl3/source/undeclared",
     "xl3/source/sheet-missing",
@@ -34,6 +36,10 @@ XtlErrorCode = Literal[
     "xl3/source/row-cross-block",
     "xl3/source/unknown-column",
     "xl3/sources/not-a-dictionary",
+    # Grouping / subtotal rows (ADR-0038)
+    "xl3/group/missing-key",
+    "xl3/subtotal/outside-group",
+    "xl3/subtotal/bad-aggregate",
     # Reserved sheets (ADR-0011)
     "xl3/sheet/reserved-name",
     "xl3/sheet/duplicate-list-name",
@@ -46,6 +52,10 @@ XtlErrorCode = Literal[
     "xl3/cell/numfmt-coercion",
     "xl3/cell/row-outside-repeat",
     "xl3/cell/formula-no-cache",
+    # Evaluator (ADR-0044)
+    "xl3/eval/type-mismatch",
+    "xl3/eval/arity-mismatch",
+    "xl3/eval/no-match",
     # XLOOKUP (ADR-0013)
     "xl3/xlookup/no-match",
     "xl3/xlookup/source-mismatch",

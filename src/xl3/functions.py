@@ -7,8 +7,10 @@ context-aware path. The simple, context-free ones live here.
 
 from __future__ import annotations
 
+import calendar
 import math
-from datetime import date, datetime, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .errors import xtl_error
@@ -23,33 +25,99 @@ from .value_model import (
 )
 
 
+_TRIM_WS_RE = re.compile(
+    "^[\t\n\v\f\r \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+"
+    "|[\t\n\v\f\r \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+$"
+)
+
+
+def _expect_arity(name: str, args: list[Any], expected: int) -> None:
+    if len(args) != expected:
+        raise xtl_error(
+            "xl3/eval/arity-mismatch",
+            f"{name}: expected {expected} arguments, got {len(args)}",
+        )
+
+
+def _parse_finite_float(v: Any) -> float | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        n = float(v)
+    elif isinstance(v, str):
+        s = v.strip()
+        if s == "":
+            return None
+        try:
+            n = float(s)
+        except ValueError:
+            return None
+    else:
+        return None
+    return n if math.isfinite(n) else None
+
+
+def _parse_integer_arg(v: Any) -> int | None:
+    n = _parse_finite_float(v)
+    if n is None or not n.is_integer():
+        return None
+    return int(n)
+
+
+def _parse_truncated_int_arg(v: Any) -> int | None:
+    n = _parse_finite_float(v)
+    return None if n is None else int(n)
+
+
+def _require_date(name: str, v: Any, ordinal: str = "") -> datetime:
+    d = _coerce_to_datetime(v)
+    if d is None:
+        where = f" as the {ordinal} argument" if ordinal else ""
+        raise xtl_error(
+            "xl3/eval/type-mismatch",
+            f"{name} expected a date{where}, got {canonical_string(v)!r}",
+        )
+    if isinstance(d, datetime):
+        if d.tzinfo is not None:
+            return d.astimezone(timezone.utc).replace(tzinfo=None)
+        return d
+    return datetime(d.year, d.month, d.day)
+
+
+def _add_months(year: int, month: int, months: int) -> tuple[int, int]:
+    y_delta, zero_based_month = divmod(month - 1 + months, 12)
+    return year + y_delta, zero_based_month + 1
+
+
+def _last_day_of_month(year: int, month: int, name: str) -> int:
+    try:
+        return calendar.monthrange(year, month)[1]
+    except ValueError as exc:
+        raise xtl_error("xl3/eval/type-mismatch", f"{name} produced an invalid date") from exc
+
+
+def _make_datetime(year: int, month: int, day: int, name: str) -> datetime:
+    try:
+        return datetime(year, month, day)
+    except ValueError as exc:
+        raise xtl_error("xl3/eval/type-mismatch", f"{name} produced an invalid date") from exc
+
+
 def fn_if(args: list[Any]) -> Any:
     """IF(condition, then, else) — ADR-0008 truthiness."""
-    if len(args) != 3:
-        raise xtl_error(
-            "xl3/cell/numfmt-coercion",  # placeholder — TODO: dedicated arity error
-            f"IF expects 3 arguments, got {len(args)}",
-        )
+    _expect_arity("IF", args, 3)
     return args[1] if is_truthy(args[0]) else args[2]
 
 
 def fn_ifempty(args: list[Any]) -> Any:
     """IFEMPTY(value, fallback) — ADR-0007 empty predicate."""
-    if len(args) != 2:
-        raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"IFEMPTY expects 2 arguments, got {len(args)}",
-        )
+    _expect_arity("IFEMPTY", args, 2)
     return args[1] if is_empty(args[0]) else args[0]
 
 
 def fn_round(args: list[Any]) -> float:
     """ROUND(value, places) — Excel half-away-from-zero."""
-    if len(args) != 2:
-        raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"ROUND expects 2 arguments, got {len(args)}",
-        )
+    _expect_arity("ROUND", args, 2)
     v = float(args[0]) if not isinstance(args[0], bool) else float(int(args[0]))
     places = int(args[1])
     factor = 10**places
@@ -63,17 +131,123 @@ def fn_round(args: list[Any]) -> float:
 
 
 def fn_abs(args: list[Any]) -> float:
-    if len(args) != 1:
-        raise xtl_error("xl3/cell/numfmt-coercion", f"ABS expects 1 argument, got {len(args)}")
+    _expect_arity("ABS", args, 1)
     return abs(float(args[0]))
 
 
 def fn_today(args: list[Any]) -> datetime:
     """TODAY() — UTC date at render time, midnight (per ADR-0001/0017)."""
-    if len(args) != 0:
-        raise xtl_error("xl3/cell/numfmt-coercion", "TODAY() takes no arguments")
+    _expect_arity("TODAY", args, 0)
     now = datetime.now(timezone.utc)
     return datetime(now.year, now.month, now.day)
+
+
+def fn_year(args: list[Any]) -> int:
+    _expect_arity("YEAR", args, 1)
+    return _require_date("YEAR()", args[0]).year
+
+
+def fn_month(args: list[Any]) -> int:
+    _expect_arity("MONTH", args, 1)
+    return _require_date("MONTH()", args[0]).month
+
+
+def fn_day(args: list[Any]) -> int:
+    _expect_arity("DAY", args, 1)
+    return _require_date("DAY()", args[0]).day
+
+
+def fn_eomonth(args: list[Any]) -> datetime:
+    _expect_arity("EOMONTH", args, 2)
+    d = _require_date("EOMONTH()", args[0], "1st")
+    months = _parse_integer_arg(args[1])
+    if months is None:
+        raise xtl_error("xl3/eval/type-mismatch", "EOMONTH() expected an integer month offset")
+    y, m = _add_months(d.year, d.month, months)
+    return _make_datetime(y, m, _last_day_of_month(y, m, "EOMONTH()"), "EOMONTH()")
+
+
+def fn_edate(args: list[Any]) -> datetime:
+    _expect_arity("EDATE", args, 2)
+    d = _require_date("EDATE()", args[0], "1st")
+    months = _parse_integer_arg(args[1])
+    if months is None:
+        raise xtl_error("xl3/eval/type-mismatch", "EDATE() expected an integer month offset")
+    y, m = _add_months(d.year, d.month, months)
+    return _make_datetime(y, m, min(d.day, _last_day_of_month(y, m, "EDATE()")), "EDATE()")
+
+
+def fn_datedif(args: list[Any]) -> int:
+    _expect_arity("DATEDIF", args, 3)
+    start = _require_date("DATEDIF()", args[0], "1st")
+    end = _require_date("DATEDIF()", args[1], "2nd")
+    unit = canonical_string(args[2]).upper()
+    if unit not in {"Y", "M", "D"}:
+        raise xtl_error("xl3/eval/type-mismatch", 'DATEDIF() unit must be "Y", "M", or "D"')
+    sign = 1 if end >= start else -1
+    a, b = (start, end) if sign == 1 else (end, start)
+    if unit == "D":
+        return sign * math.floor((b - a).total_seconds() / 86400)
+    years = b.year - a.year
+    months = b.month - a.month
+    days = b.day - a.day
+    if days < 0:
+        months -= 1
+    if months < 0:
+        years -= 1
+        months += 12
+    return sign * (years if unit == "Y" else years * 12 + months)
+
+
+def fn_upper(args: list[Any]) -> str:
+    _expect_arity("UPPER", args, 1)
+    return canonical_string(args[0]).upper()
+
+
+def fn_lower(args: list[Any]) -> str:
+    _expect_arity("LOWER", args, 1)
+    return canonical_string(args[0]).lower()
+
+
+def fn_trim(args: list[Any]) -> str:
+    _expect_arity("TRIM", args, 1)
+    return _TRIM_WS_RE.sub("", canonical_string(args[0]))
+
+
+def fn_hyperlink(args: list[Any]) -> dict[str, Any]:
+    if len(args) not in (1, 2):
+        raise xtl_error(
+            "xl3/eval/arity-mismatch",
+            f"HYPERLINK expects 1 or 2 arguments, got {len(args)}",
+        )
+    url = canonical_string(args[0]).strip()
+    if url == "":
+        raise xtl_error(
+            "xl3/eval/type-mismatch",
+            "HYPERLINK() url argument must be a non-empty string",
+        )
+    label = args[1] if len(args) == 2 and args[1] not in (None, "") else url
+    text = canonical_string(label)
+    return {"__xl3_hyperlink__": url, "text": text}
+
+
+def fn_date(args: list[Any]) -> datetime:
+    _expect_arity("DATE", args, 3)
+    year = _parse_truncated_int_arg(args[0])
+    month = _parse_truncated_int_arg(args[1])
+    day = _parse_truncated_int_arg(args[2])
+    if year is None or month is None or day is None or year < 0:
+        raise xtl_error("xl3/eval/type-mismatch", "DATE() expected finite numeric components")
+    y, m = _add_months(year, month, 0)
+    try:
+        return _make_datetime(y, m, 1, "DATE()") + timedelta(days=day - 1)
+    except (OverflowError, ValueError) as exc:
+        raise xtl_error("xl3/eval/type-mismatch", "DATE() produced an invalid date") from exc
+
+
+def fn_isblank(args: list[Any]) -> bool:
+    _expect_arity("ISBLANK", args, 1)
+    return is_empty(args[0])
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +262,7 @@ def fn_text(args: list[Any]) -> str:
     four number formats (`0`, `#,##0`, `0.00`, `#,##0.00`). Half-away-from-
     zero rounding (same rule as ROUND).
     """
-    if len(args) != 2:
-        raise xtl_error("xl3/cell/numfmt-coercion", f"TEXT expects 2 arguments, got {len(args)}")
+    _expect_arity("TEXT", args, 2)
     value, fmt = args[0], str(args[1] if args[1] is not None else "")
     # Number format paths
     if fmt in ("0", "#,##0", "0.00", "#,##0.00"):
@@ -237,6 +410,18 @@ _BUILTIN_FUNCTIONS = {
     "ABS": fn_abs,
     "TEXT": fn_text,
     "TODAY": fn_today,
+    "YEAR": fn_year,
+    "MONTH": fn_month,
+    "DAY": fn_day,
+    "EOMONTH": fn_eomonth,
+    "EDATE": fn_edate,
+    "DATEDIF": fn_datedif,
+    "UPPER": fn_upper,
+    "LOWER": fn_lower,
+    "TRIM": fn_trim,
+    "HYPERLINK": fn_hyperlink,
+    "DATE": fn_date,
+    "ISBLANK": fn_isblank,
 }
 
 

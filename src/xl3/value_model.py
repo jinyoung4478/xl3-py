@@ -185,6 +185,10 @@ def canonical_date(d: datetime | date) -> str:
 # ---------------------------------------------------------------------------
 
 
+def is_hyperlink_marker(v: Any) -> bool:
+    return isinstance(v, dict) and "__xl3_hyperlink__" in v
+
+
 def canonical_string(v: Any) -> str:
     """Canonical string form of `v` per ADR-0009 + ADR-0017."""
     if is_empty(v):
@@ -197,6 +201,8 @@ def canonical_string(v: Any) -> str:
         return canonical_date(v)
     if isinstance(v, str):
         return v
+    if is_hyperlink_marker(v):
+        return str(v.get("text") or v.get("__xl3_hyperlink__") or "")
     return str(v)
 
 
