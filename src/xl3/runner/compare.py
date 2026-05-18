@@ -11,12 +11,14 @@ Stage 2 (canonical OOXML) is out of scope for the bootstrap port.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.utils.datetime import to_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ..value_model import canonical_string
@@ -28,6 +30,14 @@ def _cell_repr(c: Cell | Any) -> str:
     if v is None:
         return "<empty>"
     return repr(v)
+
+
+def _date_serial(v: Any) -> float | None:
+    if isinstance(v, datetime):
+        return float(to_excel(v))
+    if isinstance(v, date):
+        return float(to_excel(datetime(v.year, v.month, v.day)))
+    return None
 
 
 def _values_equal(a: Any, b: Any) -> bool:
@@ -48,6 +58,14 @@ def _values_equal(a: Any, b: Any) -> bool:
         return True
     if a is None or b is None:
         return False
+    a_date = _date_serial(a)
+    b_date = _date_serial(b)
+    if a_date is not None and b_date is not None:
+        return canonical_string(a_date) == canonical_string(b_date)
+    if a_date is not None and isinstance(b, (int, float)) and not isinstance(b, bool):
+        return canonical_string(a_date) == canonical_string(float(b))
+    if b_date is not None and isinstance(a, (int, float)) and not isinstance(a, bool):
+        return canonical_string(float(a)) == canonical_string(b_date)
     # Numeric comparison via canonical form (handles 1 == 1.0)
     if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(
         a, bool

@@ -12,6 +12,7 @@ Reads a template `.xlsx` and returns a `ParsedTemplate` containing:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any
@@ -22,22 +23,21 @@ from openpyxl.cell.rich_text import CellRichText
 
 from .directives import (
     BlockDirectives,
-    Directive,
     DirectiveParseError,
     parse_directive,
 )
-from .errors import xtl_error
+from .errors import XtlErrorCode, xtl_error
 from .expression import (
     CellTemplate,
     DirectiveSegment,
     ExprSegment,
+    TextSegment,
     collect_referenced_columns,
     expression_has_per_row_ref,
     parse_cell_template,
 )
 from .types import InputSpec, SourceSpec
-from .value_model import canonical_string, is_empty
-
+from .value_model import canonical_string
 
 # ---------------------------------------------------------------------------
 # Parsed model
@@ -87,6 +87,14 @@ class TemplateCell:
     def is_directive_cell(self) -> bool:
         return self.template.is_directive_cell
 
+    @property
+    def is_subtotal_cell(self) -> bool:
+        first = self.template.segments[0]
+        return (
+            isinstance(first, DirectiveSegment)
+            and first.body.strip().lower().startswith("@subtotal")
+        )
+
 
 @dataclass
 class StaticRowPlan:
@@ -97,12 +105,27 @@ class StaticRowPlan:
 
 
 @dataclass
+class SubtotalCell:
+    col: int
+    aggregate: str
+    column: str | None
+
+
+@dataclass
+class SubtotalRowPlan:
+    template_row: int
+    cells: list[TemplateCell]
+    subtotals: list[SubtotalCell]
+
+
+@dataclass
 class DataRowPlan:
     """A row that is expanded once per filtered/sorted source row."""
 
     template_row: int
     cells: list[TemplateCell]
     directives: BlockDirectives = field(default_factory=BlockDirectives)
+    subtotal_rows: list[SubtotalRowPlan] = field(default_factory=list)
 
 
 @dataclass
@@ -186,16 +209,16 @@ def parse_template(template_bytes: bytes) -> ParsedTemplate:
 
     inputs: list[InputSpec] = []
     if "__inputs__" in wb.sheetnames:
-        inputs = _parse_inputs_sheet(wb["__inputs__"])
+        inputs = _parse_inputs_sheet(wb["__inputs__"], meta.author_values)
 
     # ADR-0011: any sheet matching `^__[a-z]+__$` is engine-reserved. The
     # four known names (__config__/__inputs__/__sources__/__lists__) are
     # processed above. Any OTHER dunder-wrapped sheet is an author error.
-    _KNOWN_RESERVED = {"__config__", "__inputs__", "__sources__", "__lists__"}
+    _known_reserved = {"__config__", "__inputs__", "__sources__", "__lists__"}
     sheets: list[SheetTemplate] = []
     for sn in wb.sheetnames:
         if is_reserved_sheet(sn):
-            if sn not in _KNOWN_RESERVED:
+            if sn not in _known_reserved:
                 raise xtl_error(
                     "xl3/sheet/reserved-name",
                     f'Sheet name "{sn}" is reserved (matches __<name>__ pattern)',
@@ -343,9 +366,102 @@ def _parse_sources_sheet(ws: Any) -> list[SourceSpec]:
 
 
 _INPUT_TYPES = {"text", "number", "date", "select"}
+_INPUT_BLOCK_RE = re.compile(r"\{\{\s*([\s\S]+?)\s*\}\}")
+_INPUT_FORBIDDEN_PATTERNS: list[tuple[re.Pattern[str], XtlErrorCode, str]] = [
+    (
+        re.compile(r"(?<!\w)\[[^\]\r\n]+\]"),
+        "xl3/inputs/forward-reference",
+        "bare [Column] references (no source row context at input-read time)",
+    ),
+    (
+        re.compile(r"(?<!\w)[A-Za-z]\w*\[[^\]\r\n]+\]"),
+        "xl3/inputs/forward-reference",
+        "Source[Column] references (sources are not loaded yet)",
+    ),
+    (
+        re.compile(r"__sources__\["),
+        "xl3/inputs/forward-reference",
+        "__sources__ lookups",
+    ),
+    (
+        re.compile(r"__inputs__\["),
+        "xl3/inputs/forward-reference",
+        "__inputs__ forward references (input rows are independent)",
+    ),
+    (
+        re.compile(r"\bROW\s*\("),
+        "xl3/inputs/runtime-only-fn",
+        "ROW() (no repeat block at input-read time)",
+    ),
+    (
+        re.compile(r"\b(?:SUM|COUNT|AVERAGE|AVG|MIN|MAX|XLOOKUP)\s*\("),
+        "xl3/inputs/runtime-only-fn",
+        "aggregate / lookup functions over source data",
+    ),
+]
 
 
-def _parse_inputs_sheet(ws: Any) -> list[InputSpec]:
+def _assert_input_expr_allowed(raw: str, row_num: int, name: str, column: str) -> None:
+    for block in _INPUT_BLOCK_RE.finditer(raw):
+        inner = block.group(1) or ""
+        for pattern, code, why in _INPUT_FORBIDDEN_PATTERNS:
+            hit = pattern.search(inner)
+            if hit:
+                raise xtl_error(
+                    code,
+                    f'__inputs__ row {row_num} (name "{name}") {column} references '
+                    f'"{hit.group(0)}" which is not available at input-read time — {why}',
+                )
+
+
+def _eval_input_cell_template(
+    raw: str,
+    config_values: dict[str, Any],
+    row_num: int,
+    name: str,
+    column: str,
+) -> str:
+    if raw == "" or "{{" not in raw:
+        return raw
+    _assert_input_expr_allowed(raw, row_num, name, column)
+
+    from .evaluator import EvalContext, evaluate
+
+    try:
+        tpl = parse_cell_template(raw)
+        ctx = EvalContext(config_values=config_values, active_source_columns=set())
+        if tpl.is_single_expression:
+            seg = tpl.segments[0]
+            assert isinstance(seg, ExprSegment)
+            return canonical_string(evaluate(seg.expr, ctx))
+
+        out: list[str] = []
+        for seg in tpl.segments:
+            if isinstance(seg, TextSegment):
+                out.append(seg.text)
+            elif isinstance(seg, ExprSegment):
+                out.append(canonical_string(evaluate(seg.expr, ctx)))
+            elif isinstance(seg, DirectiveSegment):
+                out.append("")
+        return canonical_string("".join(out))
+    except Exception as exc:
+        message = str(exc)
+        exc.args = (f"{message} (at __inputs__ row {row_num} {column})",)
+        raise
+
+
+def _input_cell_literal(ws: Any, row: int, col: int | None) -> str:
+    if col is None:
+        return ""
+    value = ws.cell(row=row, column=col).value
+    if value is None:
+        return ""
+    if isinstance(value, CellRichText):
+        value = "".join(str(part) for part in value)
+    return canonical_string(value).strip()
+
+
+def _parse_inputs_sheet(ws: Any, config_values: dict[str, Any]) -> list[InputSpec]:
     """Read `__inputs__` per ADR-0010."""
     if ws.max_row is None or ws.max_row < 1:
         return []
@@ -373,13 +489,7 @@ def _parse_inputs_sheet(ws: Any) -> list[InputSpec]:
     out: list[InputSpec] = []
     seen: set[str] = set()
     for r in range(2, ws.max_row + 1):
-        nm = ws.cell(row=r, column=name_col).value
-        tp = ws.cell(row=r, column=type_col).value
-        if nm is None and tp is None:
-            continue
-        if nm is None:
-            continue
-        name = str(nm).strip()
+        name = _input_cell_literal(ws, r, name_col)
         if not name:
             continue
         if name in seen:
@@ -388,37 +498,46 @@ def _parse_inputs_sheet(ws: Any) -> list[InputSpec]:
                 f'__inputs__ has duplicate input name "{name}"',
             )
         seen.add(name)
-        type_str = str(tp).strip().lower() if tp is not None else ""
+        type_str = _input_cell_literal(ws, r, type_col).lower()
         if type_str not in _INPUT_TYPES:
             raise xtl_error(
                 "xl3/inputs/invalid-type",
                 f'__inputs__ row {r}: type must be one of text/number/date/select',
             )
-        default = None
-        if default_col is not None:
-            dv = ws.cell(row=r, column=default_col).value
-            if dv is not None and str(dv) != "":
-                default = str(dv)
-        label = None
-        if label_col is not None:
-            lv = ws.cell(row=r, column=label_col).value
-            if lv is not None:
-                label = str(lv)
-        description = None
-        if desc_col is not None:
-            ev = ws.cell(row=r, column=desc_col).value
-            if ev is not None:
-                description = str(ev)
+        default_raw = _eval_input_cell_template(
+            _input_cell_literal(ws, r, default_col), config_values, r, name, "default"
+        )
+        label_raw = _eval_input_cell_template(
+            _input_cell_literal(ws, r, label_col), config_values, r, name, "label"
+        )
+        description_raw = _eval_input_cell_template(
+            _input_cell_literal(ws, r, desc_col), config_values, r, name, "description"
+        )
+        options_raw = _eval_input_cell_template(
+            _input_cell_literal(ws, r, options_col), config_values, r, name, "options"
+        )
+
+        default = default_raw if default_raw != "" else None
+        label = label_raw if label_raw != "" else None
+        description = description_raw if description_raw != "" else None
         options = None
-        if options_col is not None:
-            ov = ws.cell(row=r, column=options_col).value
-            if ov is not None and str(ov) != "":
-                options = [opt.strip() for opt in str(ov).split("|") if opt.strip()]
-        if type_str == "select" and not options:
-            raise xtl_error(
-                "xl3/inputs/missing-options",
-                f'__inputs__ row {r}: select inputs require options',
-            )
+        if type_str == "select":
+            if not options_raw:
+                raise xtl_error(
+                    "xl3/inputs/missing-options",
+                    f'__inputs__ row {r}: select inputs require options',
+                )
+            options = [opt.strip() for opt in options_raw.split("|") if opt.strip()]
+            if not options:
+                raise xtl_error(
+                    "xl3/inputs/missing-options",
+                    f'__inputs__ row {r}: select inputs require options',
+                )
+            if default is not None and default not in options:
+                raise xtl_error(
+                    "xl3/inputs/select-option",
+                    f'__inputs__ row {r} (name "{name}") default "{default}" is not in options',
+                )
         out.append(
             InputSpec(
                 name=name,
@@ -439,11 +558,44 @@ def _directive_error_code(body: str) -> str:
     094, etc.). Use a generic bucket otherwise.
     """
     s = body.lstrip().lower()
+    if s.startswith("@group"):
+        return "xl3/group/missing-key"
     if s.startswith("@join"):
         return "xl3/join/bad-on-clause"
     if s.startswith("@source"):
         return "xl3/source/undeclared"
     return "xl3/cell/numfmt-coercion"
+
+
+def _parse_subtotal_body(body: str) -> tuple[str, str | None]:
+    m = re.match(
+        r"^\s*@subtotal\s+(SUM|COUNT|AVERAGE|AVG|MIN|MAX)\s*\(\s*([^)]*?)\s*\)\s*$",
+        body,
+        re.IGNORECASE,
+    )
+    if not m:
+        raise xtl_error(
+            "xl3/subtotal/bad-aggregate",
+            "@subtotal accepts SUM, COUNT, AVERAGE, MIN, MAX only",
+        )
+    aggregate = m.group(1).upper()
+    if aggregate == "AVG":
+        aggregate = "AVERAGE"
+    inner = m.group(2).strip()
+    if inner == "":
+        if aggregate == "COUNT":
+            return aggregate, None
+        raise xtl_error(
+            "xl3/subtotal/bad-aggregate",
+            f"@subtotal {aggregate}() requires a column reference argument",
+        )
+    col_match = re.match(r"^\[\s*([^\]]+?)\s*\]$", inner)
+    if not col_match:
+        raise xtl_error(
+            "xl3/subtotal/bad-aggregate",
+            "@subtotal accepts SUM, COUNT, AVERAGE, MIN, MAX only",
+        )
+    return aggregate, col_match.group(1).strip()
 
 
 def _parse_sheet_template(ws: Any) -> SheetTemplate:
@@ -482,6 +634,36 @@ def _parse_sheet_template(ws: Any) -> SheetTemplate:
     pending: BlockDirectives = BlockDirectives()
     for r in sorted(rows_cells.keys()):
         cells = rows_cells[r]
+        has_subtotal = any(c.is_subtotal_cell for c in cells)
+        if has_subtotal:
+            subtotals: list[SubtotalCell] = []
+            for c in cells:
+                if not c.is_subtotal_cell:
+                    continue
+                seg = c.template.segments[0]
+                assert isinstance(seg, DirectiveSegment)
+                aggregate, column = _parse_subtotal_body(seg.body)
+                subtotals.append(
+                    SubtotalCell(col=c.col, aggregate=aggregate, column=column)
+                )
+            last_data = next(
+                (p for p in reversed(st.plan) if isinstance(p, DataRowPlan)), None
+            )
+            if last_data is None or last_data.directives.group is None:
+                raise xtl_error(
+                    "xl3/subtotal/outside-group",
+                    "@subtotal requires an active @group directive",
+                )
+            if len(last_data.subtotal_rows) >= len(last_data.directives.group.keys):
+                raise xtl_error(
+                    "xl3/subtotal/outside-group",
+                    f"@subtotal at row {r} has no matching @group level",
+                )
+            last_data.subtotal_rows.append(
+                SubtotalRowPlan(template_row=r, cells=cells, subtotals=subtotals)
+            )
+            st.directive_only_rows.add(r)
+            continue
         is_directive_row = all(c.is_directive_cell for c in cells)
         has_data = any(c.has_data_refs for c in cells)
         if is_directive_row:

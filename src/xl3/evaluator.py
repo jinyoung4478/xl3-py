@@ -6,10 +6,11 @@ about openpyxl or template structure.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import xtl_error
+from .errors import XtlError, xtl_error
 from .expression import (
     BinOp,
     BoolLit,
@@ -26,6 +27,7 @@ from .value_model import (
     canonical_string,
     compare_values,
     is_empty,
+    is_truthy,
     parse_number_strict,
 )
 
@@ -167,13 +169,40 @@ def _eval_call(expr: FuncCall, ctx: EvalContext) -> Any:
     # ROW() — needs the repeat-block index from ctx.
     if name == "ROW":
         if len(expr.args) != 0:
-            raise xtl_error("xl3/cell/numfmt-coercion", "ROW() takes no arguments")
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"ROW: expected 0 arguments, got {len(expr.args)}",
+            )
         if ctx.row_index is None:
             raise xtl_error(
                 "xl3/cell/row-outside-repeat",
                 "ROW() called outside a repeat block",
             )
         return ctx.row_index
+    # IFS/IFERROR are lazy so unmatched branches and fallbacks are not evaluated.
+    if name == "IFS":
+        if len(expr.args) % 2 != 0:
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"IFS: expected an even number of arguments, got {len(expr.args)}",
+            )
+        for i in range(0, len(expr.args), 2):
+            if is_truthy(evaluate(expr.args[i], ctx)):
+                return evaluate(expr.args[i + 1], ctx)
+        raise xtl_error("xl3/eval/no-match", "IFS() no condition matched")
+    if name == "IFERROR":
+        if len(expr.args) != 2:
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"IFERROR: expected 2 arguments, got {len(expr.args)}",
+            )
+        try:
+            value = evaluate(expr.args[0], ctx)
+        except XtlError:
+            return evaluate(expr.args[1], ctx)
+        if isinstance(value, float) and math.isnan(value):
+            return evaluate(expr.args[1], ctx)
+        return value
     # Aggregates — first arg is either a BracketRef (active row set) or a
     # SourceRef (named source's full row set). We DON'T evaluate the arg
     # eagerly; we inspect the AST to know which row set to fold over.
@@ -244,8 +273,8 @@ def _eval_aggregate(name: str, args: list[Any], ctx: EvalContext) -> Any:
         return len(ctx.active_row_set)
     if len(args) != 1:
         raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"{name} expects 1 argument, got {len(args)}",
+            "xl3/eval/arity-mismatch",
+            f"{name}: expected 1 argument, got {len(args)}",
         )
     arg_ast = args[0]
     rows, column, _src = _resolve_aggregate_target(arg_ast, ctx)
@@ -317,8 +346,8 @@ def _eval_xlookup(args: list[Any], ctx: EvalContext) -> Any:
 
     if len(args) not in (3, 4):
         raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"XLOOKUP expects 3 or 4 arguments, got {len(args)}",
+            "xl3/eval/arity-mismatch",
+            f"XLOOKUP: expected 3 or 4 arguments, got {len(args)}",
         )
     lookup_value = evaluate(args[0], ctx)
     lookup_arg = args[1]

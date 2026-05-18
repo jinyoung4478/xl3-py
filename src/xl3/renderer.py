@@ -46,12 +46,13 @@ from .parser import (
     ParsedTemplate,
     SheetTemplate,
     StaticRowPlan,
+    SubtotalCell,
     TemplateCell,
     is_reserved_sheet,
 )
 from .reader import SourceData
 from .types import OutputFile
-from .value_model import canonical_string
+from .value_model import canonical_string, is_empty, parse_number_strict
 
 
 def render(
@@ -322,15 +323,19 @@ def _capture_styles(
 ) -> dict[tuple[int, int], Any]:
     cache: dict[tuple[int, int], Any] = {}
     for plan in st.plan:
-        for c in range(1, st.max_col + 1):
-            cell = ws.cell(row=plan.template_row, column=c)
-            cache[(plan.template_row, c)] = (
-                copy(cell.font),
-                copy(cell.fill),
-                copy(cell.border),
-                copy(cell.alignment),
-                copy(cell.number_format),
-            )
+        rows = [plan.template_row]
+        if isinstance(plan, DataRowPlan):
+            rows.extend(srow.template_row for srow in plan.subtotal_rows)
+        for row_num in rows:
+            for c in range(1, st.max_col + 1):
+                cell = ws.cell(row=row_num, column=c)
+                cache[(row_num, c)] = (
+                    copy(cell.font),
+                    copy(cell.fill),
+                    copy(cell.border),
+                    copy(cell.alignment),
+                    copy(cell.number_format),
+                )
     return cache
 
 
@@ -372,7 +377,7 @@ def _emit_static(
         style = style_cache.get((plan.template_row, tc.col))
         if tc.template.is_single_expression and style is not None:
             value = _apply_numfmt_coercion(value, style[4])
-        target = ws.cell(row=out_row, column=tc.col, value=value)
+        target = _write_cell_value(ws, out_row, tc.col, value)
         _apply_style(target, style)
 
 
@@ -442,6 +447,22 @@ def _emit_data_block(
             kept_pairs.append(match)
         rows = kept
         joined_rows_for_primary = list(kept_pairs)  # type: ignore[assignment]
+
+    if bd.group is not None:
+        return _emit_grouped_block(
+            ws,
+            plan,
+            out_row,
+            rows,
+            joined_rows_for_primary,
+            join,
+            sources,
+            active_source_name,
+            primary,
+            style_cache,
+            config_values,
+            inputs,
+        )
 
     # Repeat-right vs default vertical expansion.
     if bd.repeat_right is not None:
@@ -522,6 +543,126 @@ def _first_match(
     return None
 
 
+def _numeric_values(rows: list[dict[str, Any]], column: str | None) -> list[float]:
+    nums: list[float] = []
+    if column is None:
+        return nums
+    for row in rows:
+        value = row.get(column)
+        if is_empty(value):
+            continue
+        if isinstance(value, bool):
+            nums.append(1.0 if value else 0.0)
+        elif isinstance(value, (int, float)):
+            nums.append(float(value))
+        else:
+            parsed = parse_number_strict(value)
+            if parsed is not None:
+                nums.append(parsed)
+    return nums
+
+
+def _eval_subtotal(sc: SubtotalCell, rows: list[dict[str, Any]]) -> Any:
+    if sc.aggregate == "COUNT":
+        if sc.column is None:
+            return len(rows)
+        return sum(1 for row in rows if not is_empty(row.get(sc.column)))
+    if sc.aggregate in ("SUM", "AVERAGE"):
+        nums = _numeric_values(rows, sc.column)
+        if sc.aggregate == "SUM":
+            return sum(nums) if nums else 0
+        return sum(nums) / len(nums) if nums else 0
+    if sc.aggregate in ("MIN", "MAX") and sc.column is not None:
+        from .evaluator import _aggregate_extremum
+
+        return _aggregate_extremum(
+            [row.get(sc.column) for row in rows], sc.aggregate.lower()
+        )
+    raise xtl_error(
+        "xl3/subtotal/bad-aggregate",
+        "@subtotal accepts SUM, COUNT, AVERAGE, MIN, MAX only",
+    )
+
+
+def _emit_grouped_block(
+    ws: Any,
+    plan: DataRowPlan,
+    out_row: int,
+    rows: list[dict[str, Any]],
+    joined_rows: list[dict[str, Any] | None],
+    join: JoinDirective | None,
+    sources: dict[str, SourceData],
+    active_source_name: str,
+    primary: SourceData,
+    style_cache: dict[tuple[int, int], Any],
+    config_values: dict[str, Any],
+    inputs: dict[str, Any],
+) -> int:
+    from .grouper import partition_by_group_keys, plan_emission_events
+
+    group = plan.directives.group
+    if group is None:
+        return out_row
+    tree = partition_by_group_keys(rows, group.keys)
+    events = plan_emission_events(tree, len(group.keys))
+    joined_by_row = {id(row): joined_rows[i] for i, row in enumerate(rows)}
+    data_index = 0
+
+    for ev in events:
+        if ev.kind == "data":
+            assert ev.row is not None
+            ctx = _build_row_context(
+                ev.row,
+                joined_by_row.get(id(ev.row)),
+                join,
+                sources,
+                active_source_name,
+                primary,
+                data_index + 1,
+                config_values,
+                inputs,
+                rows,
+            )
+            for tc in plan.cells:
+                value = _render_cell(tc.template, ctx)
+                style = style_cache.get((plan.template_row, tc.col))
+                if tc.template.is_single_expression and style is not None:
+                    value = _apply_numfmt_coercion(value, style[4])
+                target = _write_cell_value(ws, out_row, tc.col, value)
+                _apply_style(target, style)
+            out_row += 1
+            data_index += 1
+            continue
+
+        level_idx = ev.level - 1
+        if level_idx >= len(plan.subtotal_rows):
+            continue
+        srow = plan.subtotal_rows[level_idx]
+        subtotal_by_col = {sc.col: sc for sc in srow.subtotals}
+        ctx = EvalContext(
+            active_row={},
+            active_source_name=active_source_name,
+            active_source_columns=set(primary.headers) if primary.headers else None,
+            inputs=inputs,
+            config_values=config_values,
+            active_row_set=ev.group_rows,
+            named_sources=_build_named_sources_view(sources),
+        )
+        for tc in srow.cells:
+            subtotal = subtotal_by_col.get(tc.col)
+            if subtotal is not None:
+                value = _eval_subtotal(subtotal, ev.group_rows)
+            else:
+                value = _render_cell(tc.template, ctx)
+            style = style_cache.get((srow.template_row, tc.col))
+            if (subtotal is not None or tc.template.is_single_expression) and style is not None:
+                value = _apply_numfmt_coercion(value, style[4])
+            target = _write_cell_value(ws, out_row, tc.col, value)
+            _apply_style(target, style)
+        out_row += 1
+    return out_row
+
+
 def _emit_vertical(
     ws: Any,
     plan: DataRowPlan,
@@ -554,7 +695,7 @@ def _emit_vertical(
             style = style_cache.get((plan.template_row, tc.col))
             if tc.template.is_single_expression and style is not None:
                 value = _apply_numfmt_coercion(value, style[4])
-            target = ws.cell(row=out_row, column=tc.col, value=value)
+            target = _write_cell_value(ws, out_row, tc.col, value)
             _apply_style(target, style)
         out_row += 1
     return out_row
@@ -600,7 +741,7 @@ def _emit_repeat_right(
             new_col = tc.col + col_offset
             # First record reuses the original cell column; subsequent records
             # shift by `col_span` per record.
-            target = ws.cell(row=out_row, column=new_col, value=value)
+            target = _write_cell_value(ws, out_row, new_col, value)
             _apply_style(target, style)
             _ = base_col  # currently unused; kept for future left-anchor needs
     return out_row + 1
@@ -646,12 +787,30 @@ def _build_named_sources_view(sources: dict[str, SourceData]) -> dict[str, dict[
 # ---------------------------------------------------------------------------
 
 
+def _write_cell_value(ws, row, col, value):
+    from .value_model import is_hyperlink_marker
+
+    if is_hyperlink_marker(value):
+        cell = ws.cell(
+            row=row,
+            column=col,
+            value=value.get("text") or value.get("__xl3_hyperlink__"),
+        )
+        cell.hyperlink = value["__xl3_hyperlink__"]
+        return cell
+    return ws.cell(row=row, column=col, value=value)
+
+
 def _apply_numfmt_coercion(value: Any, number_format: str | None) -> Any:
     """ADR-0003: single-expression cells whose template cell has a date /
     number / text format MUST coerce the value to that format. Failures
     raise xl3/cell/numfmt-coercion.
     """
     if value is None or number_format is None:
+        return value
+    from .value_model import is_hyperlink_marker
+
+    if is_hyperlink_marker(value):
         return value
     nf = number_format
     if nf == "General":
