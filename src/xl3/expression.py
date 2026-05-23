@@ -132,13 +132,22 @@ def tokenize(s: str) -> list[Token]:
             i = j + 1
             continue
         if c == "[":
+            # ADR-0033 / language.md: column names inside `[...]` may contain
+            # any Unicode characters (CJK, etc.) and are not restricted to
+            # ASCII identifiers. Capture the bracket body as a single IDENT
+            # token so downstream parsing remains uniform.
+            end = s.find("]", i + 1)
+            if end < 0:
+                raise ExpressionParseError(f"unterminated '[' at {i}")
+            inner = s[i + 1 : end]
             tokens.append(Token("LBRK", "[", i))
-            i += 1
+            tokens.append(Token("IDENT", inner, i + 1))
+            tokens.append(Token("RBRK", "]", end))
+            i = end + 1
             continue
         if c == "]":
-            tokens.append(Token("RBRK", "]", i))
-            i += 1
-            continue
+            # A bare `]` outside a `[...]` pair is a syntax error.
+            raise ExpressionParseError(f"unexpected ']' at {i}")
         if c == "(":
             tokens.append(Token("LPAREN", "(", i))
             i += 1
