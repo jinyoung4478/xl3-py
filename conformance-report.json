@@ -1,13 +1,13 @@
 {
   "implementation": "xl3-py",
-  "version": "0.1.0a3",
+  "version": "0.1.0a4",
   "spec_version": "0.1",
   "comparison_stage": 1,
   "results": [
     {
       "fixture": "001-bracket-substitution",
       "status": "pass",
-      "duration_ms": 13
+      "duration_ms": 15
     },
     {
       "fixture": "002-if-function",
@@ -17,12 +17,12 @@
     {
       "fixture": "003-list-sheet-filter",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "004-repeat-right-default",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "005-round-half-away-from-zero",
@@ -52,12 +52,12 @@
     {
       "fixture": "010-numfmt-text-format-coercion",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "011-text-date-format",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "012-text-number-format",
@@ -67,12 +67,12 @@
     {
       "fixture": "013-rich-text-template-expression",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "014-source-formula-cached-result",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "015-source-sheet-prefix-first-match",
@@ -82,12 +82,12 @@
     {
       "fixture": "016-text-number-negative-rounding",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "017-source-sheet-prefix-no-match-error",
       "status": "pass",
-      "duration_ms": 2
+      "duration_ms": 3
     },
     {
       "fixture": "018-source-formula-missing-cached-result-error",
@@ -97,12 +97,12 @@
     {
       "fixture": "019-filename-empty-basename-error",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 9
     },
     {
       "fixture": "020-filename-length-overflow-error",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 5
     },
     {
       "fixture": "021-numfmt-number-coercion-error",
@@ -112,12 +112,12 @@
     {
       "fixture": "022-numfmt-date-coercion-error",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 4
     },
     {
       "fixture": "023-today-utc-dynamic",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "024-stage2-merge-preservation",
@@ -152,12 +152,12 @@
     {
       "fixture": "030-source-table-finite-range",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "031-source-table-zero-data-range",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 3
     },
     {
       "fixture": "032-source-table-empty-column-name-error",
@@ -192,7 +192,7 @@
     {
       "fixture": "038-source-sheet-exact-match-beats-prefix",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "039-source-sheet-default-first-worksheet",
@@ -207,7 +207,7 @@
     {
       "fixture": "041-row-function-inside-repeat-block",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "042-row-function-outside-repeat-block-error",
@@ -227,12 +227,12 @@
     {
       "fixture": "045-list-sheet-not-in-filter",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "046-count-field-non-empty",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "047-aggregate-functions",
@@ -272,7 +272,7 @@
     {
       "fixture": "054-empty-list-membership",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "055-if-truthy-zero-and-empty",
@@ -282,27 +282,27 @@
     {
       "fixture": "056-if-truthy-string-zero-not-special",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "057-if-truthy-boolean",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "058-if-comparison-result",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "059-compare-numeric-string-vs-number",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "060-compare-string-codepoint-order",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "061-concat-canonical-form",
@@ -312,7 +312,7 @@
     {
       "fixture": "062-concat-empty-stringifies-to-empty",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "063-compare-empty-vs-value",
@@ -322,7 +322,7 @@
     {
       "fixture": "064-compare-unicode-minus-not-numeric",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "065-input-text-default-applied",
@@ -342,12 +342,12 @@
     {
       "fixture": "068-input-select-host-supplied",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "069-source-multi-declaration",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "070-source-aggregate-cross-source",
@@ -357,12 +357,12 @@
     {
       "fixture": "071-source-directive-active",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "072-source-undeclared-error",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 4
     },
     {
       "fixture": "073-source-row-cross-error",
@@ -377,7 +377,7 @@
     {
       "fixture": "075-xlookup-fallback",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "076-xlookup-no-match-error",
@@ -397,7 +397,7 @@
     {
       "fixture": "079-join-basic-inner",
       "status": "pass",
-      "duration_ms": 9
+      "duration_ms": 6
     },
     {
       "fixture": "080-join-no-match-dropped",
@@ -407,7 +407,7 @@
     {
       "fixture": "081-join-undeclared-source-error",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 7
     },
     {
       "fixture": "082-join-bad-on-clause-error",
@@ -432,7 +432,7 @@
     {
       "fixture": "086-sheet-group-first-seen-order",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "087-date-canonical-string-concat",
@@ -442,12 +442,12 @@
     {
       "fixture": "088-date-comparison-equality",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "089-error-sentinel-empty",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "090-percentage-numeric-flow",
@@ -482,7 +482,7 @@
     {
       "fixture": "096-canonical-number-scientific-boundary",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "097-native-formula-static-cell-preserved",
@@ -507,7 +507,7 @@
     {
       "fixture": "102-function-arity-round-missing-arg",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 4
     },
     {
       "fixture": "103-function-arity-xlookup-too-few-args",
@@ -532,12 +532,12 @@
     {
       "fixture": "107-group-key-empty-blank-placeholder-file",
       "status": "pass",
-      "duration_ms": 8
+      "duration_ms": 10
     },
     {
       "fixture": "108-group-key-empty-blank-placeholder-sheet",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "109-source-column-reserved-name-error",
@@ -547,12 +547,12 @@
     {
       "fixture": "110-directive-empty-filter-error",
       "status": "pass",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "fixture": "111-directive-empty-source-error",
       "status": "pass",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "fixture": "112-literal-signed-number",
@@ -587,7 +587,7 @@
     {
       "fixture": "118-unicode-normalization-not-applied",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "119-output-filename-collision-error",
@@ -622,7 +622,7 @@
     {
       "fixture": "125-hyperlink-function",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "126-date-arithmetic-functions",
@@ -637,7 +637,7 @@
     {
       "fixture": "128-function-batch-0044",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 7
     },
     {
       "fixture": "129-cell-formula-preservation",
@@ -652,7 +652,7 @@
     {
       "fixture": "131-inputs-with-xtl-default",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "132-group-single-level-subtotal",
@@ -667,7 +667,7 @@
     {
       "fixture": "134-group-grand-total-via-outermost-subtotal",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "135-group-filter-composition",
@@ -698,11 +698,86 @@
       "fixture": "140-inputs-runtime-only-fn",
       "status": "pass",
       "duration_ms": 1
+    },
+    {
+      "fixture": "141-block-column-scoped-side-cells",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "142-block-column-scoped-side-formulas",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "143-block-shared-formula-side-cells",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "144-block-side-cells-after-block",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "145-block-bracket-outside-error",
+      "status": "pass",
+      "duration_ms": 1
+    },
+    {
+      "fixture": "146-multi-block-explicit-two-tables",
+      "status": "pass",
+      "duration_ms": 5
+    },
+    {
+      "fixture": "147-multi-block-different-sources",
+      "status": "pass",
+      "duration_ms": 7
+    },
+    {
+      "fixture": "148-multi-block-different-start-rows",
+      "status": "pass",
+      "duration_ms": 7
+    },
+    {
+      "fixture": "149-block-col-range-explicit",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "150-block-full-rect-explicit",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "151-block-overlap-error",
+      "status": "pass",
+      "duration_ms": 1
+    },
+    {
+      "fixture": "152-block-empty-table-error",
+      "status": "pass",
+      "duration_ms": 0
+    },
+    {
+      "fixture": "153-directive-orphan-error",
+      "status": "pass",
+      "duration_ms": 1
+    },
+    {
+      "fixture": "154-multi-block-per-block-filter",
+      "status": "pass",
+      "duration_ms": 6
+    },
+    {
+      "fixture": "155-multi-block-row-function-scope",
+      "status": "pass",
+      "duration_ms": 6
     }
   ],
   "summary": {
-    "total": 133,
-    "passed": 133,
+    "total": 148,
+    "passed": 148,
     "failed": 0,
     "skipped": 6
   }

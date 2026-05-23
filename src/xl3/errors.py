@@ -57,6 +57,11 @@ XtlErrorCode = Literal[
     "xl3/parser/empty-block",
     # Parser (ADR-0051)
     "xl3/parser/unbalanced-literal",
+    # Data block (ADR-0066 / 0067 / 0068 / 0069)
+    "xl3/expression/bracket-outside-block",
+    "xl3/block/overlap",
+    "xl3/block/empty-table",
+    "xl3/directive/orphan",
     # Evaluator (ADR-0023, ADR-0024, ADR-0019 amendment, ADR-0039, ADR-0044)
     "xl3/eval/operand-coercion",
     "xl3/eval/arity-mismatch",

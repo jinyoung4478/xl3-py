@@ -45,9 +45,18 @@ class BoolLit:
 
 @dataclass
 class BracketRef:
-    """`[Column]` — the active source's current row's column."""
+    """`[Column]` — the active source's current row's column.
+
+    `bracketed=False` indicates a bare identifier (`{{ Department }}`)
+    that was rewritten to a column ref per ADR-0026's group-key rule
+    (see PORTING_NOTES.md #6). ADR-0066 / 0067 / 0068 only count truly
+    bracketed `[col]` cells as data-block markers; bare identifiers
+    still resolve per-row but do NOT trigger column-scoped block
+    detection (matching the TS reference impl's `isDataExpression`).
+    """
 
     column: str
+    bracketed: bool = True
 
 
 @dataclass
@@ -329,7 +338,7 @@ class _Parser:
             # column. Several conformance fixtures (006, 007, 049, 085)
             # rely on the same form working in cell bodies, so we accept
             # it uniformly. (See PORTING_NOTES.md #6.)
-            return BracketRef(ident)
+            return BracketRef(ident, bracketed=False)
         raise ExpressionParseError(f"unexpected token {t}")
 
 
@@ -349,7 +358,7 @@ def parse_filename_or_sheet_expression(body: str) -> Expr:
         # Allow TRUE/FALSE to remain as Booleans.
         if body.upper() in ("TRUE", "FALSE"):
             return BoolLit(body.upper() == "TRUE")
-        return BracketRef(body)
+        return BracketRef(body, bracketed=False)
     return parse_expression(body)
 
 
@@ -484,6 +493,37 @@ def collect_referenced_columns(expr: Expr) -> set[str]:
 _AGGREGATE_NAMES = frozenset({"SUM", "COUNT", "AVERAGE", "AVG", "MIN", "MAX"})
 # Source-named refs that are NOT per-row data references.
 _RESERVED_NAMESPACE_SOURCES = frozenset({"__inputs__", "__config__"})
+
+
+def expression_has_data_marker_ref(expr: Expr) -> bool:
+    """ADR-0066 / TS `isDataExpression`: only TRULY bracketed `[Column]`
+    references (and non-aggregate `Source[Column]`) count as data-block
+    markers. Bare-identifier group-key references (`{{ Department }}`)
+    resolve per-row but do NOT trigger column-scoped block detection.
+    """
+
+    def walk(e: Expr) -> bool:
+        if isinstance(e, BracketRef):
+            return e.bracketed
+        if isinstance(e, SourceRef):
+            return e.source not in _RESERVED_NAMESPACE_SOURCES
+        if isinstance(e, FuncCall):
+            if e.name in _AGGREGATE_NAMES:
+                return False
+            if e.name == "XLOOKUP":
+                if e.args and walk(e.args[0]):
+                    return True
+                if len(e.args) >= 4 and walk(e.args[3]):
+                    return True
+                return False
+            return any(walk(a) for a in e.args)
+        if isinstance(e, BinOp):
+            return walk(e.left) or walk(e.right)
+        if isinstance(e, UnaryNeg):
+            return walk(e.operand)
+        return False
+
+    return walk(expr)
 
 
 def expression_has_per_row_ref(expr: Expr) -> bool:
