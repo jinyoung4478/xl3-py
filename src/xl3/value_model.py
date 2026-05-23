@@ -10,7 +10,7 @@ Authoritative ADRs (read together as the value-model contract):
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ def canonical_date(d: datetime | date) -> str:
     """
     if isinstance(d, datetime):
         if d.tzinfo is not None:
-            d = d.astimezone(timezone.utc).replace(tzinfo=None)
+            d = d.astimezone(UTC).replace(tzinfo=None)
         if d.hour == 0 and d.minute == 0 and d.second == 0 and d.microsecond == 0:
             return f"{d.year:04d}-{d.month:02d}-{d.day:02d}"
         return (
@@ -189,6 +189,17 @@ def is_hyperlink_marker(v: Any) -> bool:
     return isinstance(v, dict) and "__xl3_hyperlink__" in v
 
 
+# ADR-0025: Excel-style error-cell marker. The renderer recognises this
+# shape and writes a real Excel `#DIV/0!` error cell. canonical_string
+# returns "#DIV/0!" so the marker also stringifies through `&` and other
+# downstream contexts as a readable string.
+DIV_ZERO_ERROR: dict[str, str] = {"__xl3_error__": "#DIV/0!"}
+
+
+def is_xtl_error_cell(v: Any) -> bool:
+    return isinstance(v, dict) and "__xl3_error__" in v
+
+
 def canonical_string(v: Any) -> str:
     """Canonical string form of `v` per ADR-0009 + ADR-0017."""
     if is_empty(v):
@@ -203,6 +214,8 @@ def canonical_string(v: Any) -> str:
         return v
     if is_hyperlink_marker(v):
         return str(v.get("text") or v.get("__xl3_hyperlink__") or "")
+    if is_xtl_error_cell(v):
+        return str(v["__xl3_error__"])
     return str(v)
 
 
@@ -230,42 +243,38 @@ def parse_number_strict(v: Any) -> float | None:
     s = trim_unicode_whitespace(v)
     if s == "":
         return None
-    # ECMAScript Number():
-    #   - empty string → 0 (we already returned None — empty is treated as
-    #     "not a number" in our caller's path because is_empty short-circuits
-    #     comparisons before this point)
-    #   - "0x" / "0o" / "0b" prefixes parse as integers
-    #   - "Infinity" / "-Infinity" / "+Infinity" recognized
-    #   - leading "+" or "-" recognized
-    #   - whitespace already trimmed
-    # Python float() differs:
-    #   - accepts "inf", "nan" (case-insensitive); ECMA does NOT (Number("inf") is NaN).
-    #   - does NOT accept hex/oct/bin literals.
-    # We handle these divergences explicitly.
-    if s.lower() in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"):
-        # JS: Number("Infinity") === Infinity, Number("inf") === NaN.
-        if s in ("Infinity", "+Infinity"):
-            return _INF
-        if s == "-Infinity":
-            return -_INF
+    # ADR-0064: scope coercion to Excel-default forms. REJECT (return None):
+    #   - leading "+" (e.g., "+5")
+    #   - Unicode minus U+2212 (ADR-0009)
+    #   - hex/oct/bin prefixes ("0x10", "0o17", "0b101")
+    #   - "Infinity" / "-Infinity" / "+Infinity"
+    #   - "inf" / "nan" / "NaN" / etc.
+    # ACCEPT:
+    #   - decimal integers / fractions, with optional leading "-"
+    #   - scientific notation ("1e5", "-1.5e-3")
+    if s.lower() in (
+        "nan",
+        "inf",
+        "+inf",
+        "-inf",
+        "infinity",
+        "+infinity",
+        "-infinity",
+    ):
         return None
-    # Hex / octal / binary literals (ECMA accepts; Python float() rejects)
-    body = s
-    sign = 1.0
-    if body.startswith(("+", "-")):
-        sign = -1.0 if body[0] == "-" else 1.0
-        body = body[1:]
+    if s.startswith("+"):
+        return None
+    # Hex / octal / binary literals — Python float() rejects; we ALSO reject
+    # them (ADR-0064: Excel-default principle).
+    body = s[1:] if s.startswith("-") else s
     if len(body) >= 2 and body[0] == "0" and body[1] in ("x", "X", "o", "O", "b", "B"):
-        try:
-            return sign * float(int(body, 0))
-        except ValueError:
-            return None
+        return None
     # Standard decimal / float
     try:
         f = float(s)
     except ValueError:
         return None
-    if math.isnan(f):
+    if math.isnan(f) or math.isinf(f):
         return None
     return f
 
@@ -305,9 +314,9 @@ def compare_values(a: Any, b: Any) -> int:
         ax = a if isinstance(a, datetime) else datetime(a.year, a.month, a.day)
         bx = b if isinstance(b, datetime) else datetime(b.year, b.month, b.day)
         if ax.tzinfo is not None:
-            ax = ax.astimezone(timezone.utc).replace(tzinfo=None)
+            ax = ax.astimezone(UTC).replace(tzinfo=None)
         if bx.tzinfo is not None:
-            bx = bx.astimezone(timezone.utc).replace(tzinfo=None)
+            bx = bx.astimezone(UTC).replace(tzinfo=None)
         return (ax > bx) - (ax < bx)
     # Both numeric (number, or string parsable as finite number)
     a_num = a if isinstance(a, (int, float)) and not isinstance(a, bool) else parse_number_strict(a)

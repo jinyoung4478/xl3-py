@@ -22,7 +22,6 @@ from xl3.value_model import (
     trim_unicode_whitespace,
 )
 
-
 # ---------------------------------------------------------------------------
 # ADR-0007 — empty
 # ---------------------------------------------------------------------------
@@ -171,10 +170,24 @@ class TestParseNumberStrict:
         assert parse_number_strict("−5") is None
         assert parse_number_strict("−5.0") is None
 
-    def test_javascript_infinity_keyword(self) -> None:
-        # ECMA Number("Infinity") === Infinity. We accept that, then the
-        # value flows as empty per ADR-0009 (since canonical_number(inf) == "").
-        assert parse_number_strict("Infinity") == float("inf")
+    def test_infinity_strings_rejected(self) -> None:
+        # ADR-0064: scope coercion to Excel-default forms. "Infinity",
+        # "-Infinity", "+Infinity" all reject — they cannot arise from
+        # Excel-authored source data and producing a non-finite number
+        # from coercion would violate the operator-coercion contract.
+        assert parse_number_strict("Infinity") is None
+        assert parse_number_strict("+Infinity") is None
+        assert parse_number_strict("-Infinity") is None
+
+    def test_excel_default_rejects_non_decimal_prefixes(self) -> None:
+        # ADR-0064: reject hex / binary / octal prefixes and leading "+".
+        # Scientific notation remains accepted (covered by test_parses).
+        assert parse_number_strict("0x10") is None
+        assert parse_number_strict("0b101") is None
+        assert parse_number_strict("0o17") is None
+        assert parse_number_strict("+5") is None
+        # Negative is still legal:
+        assert parse_number_strict("-5") == -5
 
 
 # ---------------------------------------------------------------------------

@@ -555,16 +555,14 @@ def _directive_error_code(body: str) -> str:
     """Pick a stable error code based on which directive failed to parse.
 
     Specific codes are required for fixtures that assert error_code (082,
-    094, etc.). Use a generic bucket otherwise.
+    094, etc.). Otherwise default to ADR-0027 `xl3/directive/invalid-syntax`.
     """
     s = body.lstrip().lower()
     if s.startswith("@group"):
         return "xl3/group/missing-key"
     if s.startswith("@join"):
         return "xl3/join/bad-on-clause"
-    if s.startswith("@source"):
-        return "xl3/source/undeclared"
-    return "xl3/cell/numfmt-coercion"
+    return "xl3/directive/invalid-syntax"
 
 
 def _parse_subtotal_body(body: str) -> tuple[str, str | None]:
@@ -675,7 +673,13 @@ def _parse_sheet_template(ws: Any) -> SheetTemplate:
                     pending.add(parse_directive(seg.body))
                 except DirectiveParseError as e:
                     code = _directive_error_code(seg.body)
-                    raise xtl_error(code, f"{e}") from e
+                    if code == "xl3/directive/invalid-syntax":
+                        # ADR-0027: generic invalid-directive shape — surface the
+                        # offending expression verbatim so authors can spot it.
+                        msg = f"Invalid directive: {seg.body.strip()}"
+                    else:
+                        msg = str(e)
+                    raise xtl_error(code, msg) from e
             continue
         if has_data:
             st.plan.append(

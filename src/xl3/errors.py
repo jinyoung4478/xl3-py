@@ -35,27 +35,42 @@ XtlErrorCode = Literal[
     "xl3/source/missing-required",
     "xl3/source/row-cross-block",
     "xl3/source/unknown-column",
+    "xl3/source/reserved-column-name",
     "xl3/sources/not-a-dictionary",
-    # Grouping / subtotal rows (ADR-0038)
-    "xl3/group/missing-key",
-    "xl3/subtotal/outside-group",
-    "xl3/subtotal/bad-aggregate",
     # Reserved sheets (ADR-0011)
     "xl3/sheet/reserved-name",
     "xl3/sheet/duplicate-list-name",
     # Join (ADR-0014)
     "xl3/join/undeclared-source",
     "xl3/join/bad-on-clause",
+    # Directive (ADR-0027)
+    "xl3/directive/invalid-syntax",
+    # Grouping / subtotal rows (ADR-0038)
+    "xl3/group/missing-key",
+    "xl3/subtotal/outside-group",
+    "xl3/subtotal/bad-aggregate",
     # Lists
     "xl3/lists/missing-reference",
+    # Lists (ADR-0057)
+    "xl3/lists/invalid-use",
+    # Parser (ADR-0021)
+    "xl3/parser/empty-block",
+    # Parser (ADR-0051)
+    "xl3/parser/unbalanced-literal",
+    # Evaluator (ADR-0023, ADR-0024, ADR-0019 amendment, ADR-0039, ADR-0044)
+    "xl3/eval/operand-coercion",
+    "xl3/eval/arity-mismatch",
+    "xl3/eval/unsupported-syntax",
+    "xl3/eval/type-mismatch",
+    "xl3/eval/no-match",
+    # Evaluator (ADR-0059)
+    "xl3/eval/bad-aggregate-arg",
+    # Expression (ADR-0054)
+    "xl3/expression/unknown-name",
     # Cell evaluation
     "xl3/cell/numfmt-coercion",
     "xl3/cell/row-outside-repeat",
     "xl3/cell/formula-no-cache",
-    # Evaluator (ADR-0044)
-    "xl3/eval/type-mismatch",
-    "xl3/eval/arity-mismatch",
-    "xl3/eval/no-match",
     # XLOOKUP (ADR-0013)
     "xl3/xlookup/no-match",
     "xl3/xlookup/source-mismatch",
@@ -63,6 +78,8 @@ XtlErrorCode = Literal[
     # Filename sanitization (ADR-0002)
     "xl3/filename/empty",
     "xl3/filename/too-long",
+    # Output filename collision (ADR-0031)
+    "xl3/filename/collision",
 ]
 
 

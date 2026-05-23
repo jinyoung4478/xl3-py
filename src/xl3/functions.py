@@ -10,20 +10,16 @@ from __future__ import annotations
 import calendar
 import math
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from .errors import xtl_error
 from .value_model import (
-    canonical_date,
-    canonical_number,
     canonical_string,
-    compare_values,
     is_empty,
     is_truthy,
     parse_number_strict,
 )
-
 
 _TRIM_WS_RE = re.compile(
     "^[\t\n\v\f\r \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+"
@@ -79,7 +75,7 @@ def _require_date(name: str, v: Any, ordinal: str = "") -> datetime:
         )
     if isinstance(d, datetime):
         if d.tzinfo is not None:
-            return d.astimezone(timezone.utc).replace(tzinfo=None)
+            return d.astimezone(UTC).replace(tzinfo=None)
         return d
     return datetime(d.year, d.month, d.day)
 
@@ -138,7 +134,7 @@ def fn_abs(args: list[Any]) -> float:
 def fn_today(args: list[Any]) -> datetime:
     """TODAY() — UTC date at render time, midnight (per ADR-0001/0017)."""
     _expect_arity("TODAY", args, 0)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return datetime(now.year, now.month, now.day)
 
 
@@ -349,7 +345,7 @@ def _format_date_text(value: Any, fmt: str) -> str:
             f"TEXT cannot coerce {canonical_string(value)!r} to a date",
         )
     if isinstance(d, datetime) and d.tzinfo is not None:
-        d = d.astimezone(timezone.utc).replace(tzinfo=None)
+        d = d.astimezone(UTC).replace(tzinfo=None)
     elif isinstance(d, date) and not isinstance(d, datetime):
         d = datetime(d.year, d.month, d.day)
 

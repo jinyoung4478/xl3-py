@@ -5,6 +5,21 @@ from typing import Any, Literal
 
 from .value_model import canonical_string, is_empty
 
+# ADR-0026: Excel-style "(blank)" placeholder for empty group keys.
+# Without this, an empty Region cell would render to a `.xlsx` filename or a
+# "Sheet" fallback — neither is portable. Excel pivot tables put empty
+# values into a "(blank)" group; xl3 follows.
+EMPTY_GROUP_KEY_PLACEHOLDER = "(blank)"
+
+
+def group_key_canonical(value: object) -> str:
+    """ADR-0009 + ADR-0026: canonical string form of a group-key value, with
+    empty values replaced by the "(blank)" placeholder so sheet/file names
+    render predictably rather than producing sanitization errors.
+    """
+    s = canonical_string(value)
+    return EMPTY_GROUP_KEY_PLACEHOLDER if s == "" else s
+
 
 @dataclass
 class GroupNode:
@@ -28,7 +43,7 @@ def partition_by_group_keys(
         parent_index = top_index
         node: GroupNode | None = None
         for key in keys:
-            value = canonical_string(row.get(key))
+            value = group_key_canonical(row.get(key))
             next_node = parent_index.get(value)
             if next_node is None:
                 next_node = GroupNode(key_value=value)

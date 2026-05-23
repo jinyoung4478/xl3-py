@@ -27,7 +27,6 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 
 from .directives import (
-    BlockDirectives,
     JoinDirective,
     apply_filters,
     apply_sorts,
@@ -41,13 +40,13 @@ from .expression import (
     ExprSegment,
     TextSegment,
 )
+from .grouper import group_key_canonical
 from .parser import (
     DataRowPlan,
     ParsedTemplate,
     SheetTemplate,
     StaticRowPlan,
     SubtotalCell,
-    TemplateCell,
     is_reserved_sheet,
 )
 from .reader import SourceData
@@ -79,6 +78,10 @@ def render(
         file_groups = [_GroupBucket(key=(), rows=[])]
 
     files: list[OutputFile] = []
+    # ADR-0031: detect filename collisions across file groups before rendering
+    # any of them. Two distinct group keys that sanitize to the same filename
+    # would otherwise silently overwrite each other in host code.
+    seen_filenames: set[str] = set()
     for bucket in file_groups:
         # Build a per-file sources dict with the default's rows narrowed to
         # this file's bucket. Named sources keep their full row sets.
@@ -117,6 +120,18 @@ def render(
 
         filename = _evaluate_filename(parsed, file_sources, config_values, inputs)
         sanitized, _warning = _sanitize_via_filename_module(filename)
+        if sanitized in seen_filenames:
+            from .errors import xtl_error
+
+            raise xtl_error(
+                "xl3/filename/collision",
+                f'Output filename "{sanitized}" is produced by multiple file groups '
+                "(their group key values collapse to the same sanitized filename). "
+                "Make group keys distinct upstream — different cell values that "
+                'share only forbidden characters (e.g., "Seoul/Korea" and "Seoul:Korea") '
+                'both sanitize to "Seoul_Korea".',
+            )
+        seen_filenames.add(sanitized)
         files.append(OutputFile(filename=sanitized, data=out_io.getvalue()))
     return files
 
@@ -138,20 +153,32 @@ class _GroupBucket:
 _BARE_IDENT_BLOCK_RE = __import__("re").compile(
     r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}"
 )
+_BRACKET_REF_BLOCK_RE = __import__("re").compile(
+    r"\{\{\s*\[\s*([^\]\r\n]+?)\s*\]\s*\}\}"
+)
+
+
+def _extract_group_keys(pattern: str) -> list[str]:
+    """Both `{{ Region }}` and `{{ [Region] }}` in file/sheet patterns are
+    group-key references per `language.md` §"Group Keys" + ADR-0026. They
+    partition rows into file/sheet buckets. Expressions with operators,
+    function calls, or `__config__[...]` / source-prefixed shapes are NOT
+    group keys and evaluate against the bucket's first row instead.
+    """
+    keys: list[str] = []
+    for m in _BARE_IDENT_BLOCK_RE.finditer(pattern):
+        keys.append(m.group(1))
+    for m in _BRACKET_REF_BLOCK_RE.finditer(pattern):
+        keys.append(m.group(1))
+    return keys
 
 
 def _extract_file_group_keys(pattern: str) -> list[str]:
-    """Bare-identifier `{{ X }}` blocks in the output_file_pattern are file
-    group keys. Bracketed `{{ [Col] }}` is a row-substitution, not a group
-    key — those expressions evaluate against the first row of each file
-    group, not partition the rows.
-    """
-    return [m.group(1) for m in _BARE_IDENT_BLOCK_RE.finditer(pattern)]
+    return _extract_group_keys(pattern)
 
 
 def _extract_sheet_group_keys(sheet_name: str) -> list[str]:
-    """Bare-identifier `{{ X }}` blocks in a sheet name are sheet group keys."""
-    return [m.group(1) for m in _BARE_IDENT_BLOCK_RE.finditer(sheet_name)]
+    return _extract_group_keys(sheet_name)
 
 
 def _partition_first_seen(
@@ -167,7 +194,10 @@ def _partition_first_seen(
     seen: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     order: list[tuple[Any, ...]] = []
     for r in rows:
-        key = tuple(canonical_string(r.get(k)) for k in group_keys)
+        # ADR-0026: empty canonical-string values use the "(blank)" placeholder
+        # so file/sheet names render predictably (e.g. "(blank).xlsx") rather
+        # than producing a sanitization error or a generic fallback.
+        key = tuple(group_key_canonical(r.get(k)) for k in group_keys)
         if key not in seen:
             seen[key] = []
             order.append(key)
@@ -200,8 +230,14 @@ def _render_grouped_sheet(
     template_ws = wb[st.original_name]
     new_sheets: list[tuple[str, _GroupBucket]] = []
     for bucket in buckets:
-        new_name = canonical_string(bucket.key[0]) if len(bucket.key) == 1 else "_".join(
-            canonical_string(v) for v in bucket.key
+        # Bucket keys are already canonical-string with the "(blank)"
+        # placeholder applied by _partition_first_seen (ADR-0026), so the
+        # resulting sheet name is always non-empty when there is at least
+        # one group key.
+        new_name = (
+            str(bucket.key[0])
+            if len(bucket.key) == 1
+            else "_".join(str(v) for v in bucket.key)
         )
         if not new_name:
             new_name = st.original_name
@@ -302,10 +338,29 @@ def _render_sheet(
                 ws.cell(row=r, column=c).value = None
 
     out_row = min(template_rows_used) if template_rows_used else 1
+    # ADR-0021: preserve intentional empty template rows between plans.
+    # When two consecutive plans have a gap of empty rows (and no
+    # directive rows) between them in the template, that gap shifts the
+    # output position by the same amount so static formulas in static
+    # cells keep their relative-position semantics.
+    last_template_row: int | None = None
     for plan in st.plan:
+        if last_template_row is not None:
+            gap = plan.template_row - last_template_row - 1
+            # Subtract any directive-only template rows that fall in this
+            # gap — those were stripped from output, not preserved.
+            directive_rows_in_gap = sum(
+                1
+                for r in st.directive_only_rows
+                if last_template_row < r < plan.template_row
+            )
+            preserved_empty = gap - directive_rows_in_gap
+            if preserved_empty > 0:
+                out_row += preserved_empty
         if isinstance(plan, StaticRowPlan):
             _emit_static(ws, plan, out_row, style_cache, sources, config_values, inputs)
             out_row += 1
+            last_template_row = plan.template_row
         else:
             out_row = _emit_data_block(
                 ws,
@@ -316,6 +371,8 @@ def _render_sheet(
                 config_values,
                 inputs,
             )
+            # A data block covers its template row plus any subtotal rows.
+            last_template_row = plan.template_row + len(plan.subtotal_rows)
 
 
 def _capture_styles(
@@ -788,7 +845,9 @@ def _build_named_sources_view(sources: dict[str, SourceData]) -> dict[str, dict[
 
 
 def _write_cell_value(ws, row, col, value):
-    from .value_model import is_hyperlink_marker
+    from openpyxl.cell.cell import TYPE_ERROR
+
+    from .value_model import is_hyperlink_marker, is_xtl_error_cell
 
     if is_hyperlink_marker(value):
         cell = ws.cell(
@@ -797,6 +856,11 @@ def _write_cell_value(ws, row, col, value):
             value=value.get("text") or value.get("__xl3_hyperlink__"),
         )
         cell.hyperlink = value["__xl3_hyperlink__"]
+        return cell
+    if is_xtl_error_cell(value):
+        # ADR-0025: write a real Excel error cell (`#DIV/0!` etc.).
+        cell = ws.cell(row=row, column=col, value=value["__xl3_error__"])
+        cell.data_type = TYPE_ERROR
         return cell
     return ws.cell(row=row, column=col, value=value)
 
@@ -808,9 +872,9 @@ def _apply_numfmt_coercion(value: Any, number_format: str | None) -> Any:
     """
     if value is None or number_format is None:
         return value
-    from .value_model import is_hyperlink_marker
+    from .value_model import is_hyperlink_marker, is_xtl_error_cell
 
-    if is_hyperlink_marker(value):
+    if is_hyperlink_marker(value) or is_xtl_error_cell(value):
         return value
     nf = number_format
     if nf == "General":
@@ -925,12 +989,22 @@ def _evaluate_filename(
         config_values=config_values,
         active_source_columns=headers,
     )
+    from .expression import BracketRef as _BracketRef
+
     out: list[str] = []
     for seg in tpl.segments:
         if isinstance(seg, TextSegment):
             out.append(seg.text)
         elif isinstance(seg, ExprSegment):
-            out.append(canonical_string(evaluate(seg.expr, ctx)))
+            value = evaluate(seg.expr, ctx)
+            # ADR-0026: a bare-identifier `{{ Col }}` in a filename pattern
+            # is a group-key reference; empty values substitute the
+            # "(blank)" placeholder. `__config__[X]` / `__inputs__[X]` /
+            # `Source[Col]` are NOT group keys and use canonical_string.
+            if isinstance(seg.expr, _BracketRef):
+                out.append(group_key_canonical(value))
+            else:
+                out.append(canonical_string(value))
     return "".join(out)
 
 
@@ -938,15 +1012,19 @@ def _parse_pattern(pattern: str) -> CellTemplate:
     """Parse a filename pattern. Bare identifiers like `{{ Customer }}` are
     treated as group-key references per language.md §"Group Keys".
     """
-    from .expression import (
-        DirectiveSegment as _DS,
-        ExprSegment as _ES,
-        TextSegment as _TS,
-    )
-
     # Reuse the `{{ ... }}` splitter but parse each body with the relaxed
     # filename grammar.
     import re as _re
+
+    from .expression import (
+        DirectiveSegment as _DS,
+    )
+    from .expression import (
+        ExprSegment as _ES,
+    )
+    from .expression import (
+        TextSegment as _TS,
+    )
 
     segs: list[Any] = []
     i = 0
