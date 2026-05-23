@@ -82,6 +82,22 @@ class GroupDirective:
     keys: list[str]
 
 
+@dataclass
+class BlockDirective:
+    """`@block` declares a data-block rectangle per ADR-0067.
+
+    Three grammar forms:
+      - bare `@block`             — col_start=col_end=row_start=row_end=0 (all auto)
+      - col-range `@block A:D`    — col_start/col_end set, row_start/row_end=0
+      - full-rect `@block A2:D7`  — all four set
+    """
+
+    col_start: int = 0
+    col_end: int = 0
+    row_start: int = 0
+    row_end: int = 0
+
+
 Directive = (
     FilterDirective
     | SortDirective
@@ -90,6 +106,7 @@ Directive = (
     | SourceDirective
     | JoinDirective
     | GroupDirective
+    | BlockDirective
 )
 
 
@@ -129,7 +146,64 @@ def parse_directive(body: str) -> Directive:
         return _parse_join(rest)
     if name == "group":
         return _parse_group(rest)
+    if name == "block":
+        return _parse_block(rest)
     raise DirectiveParseError(f"unknown directive @{name}")
+
+
+# ADR-0067: @block grammar — bare / col-range (A:D) / full-rect (A2:D7).
+_BLOCK_COL_RANGE_RE = re.compile(r"^([A-Z]+):([A-Z]+)$")
+_BLOCK_FULL_RECT_RE = re.compile(r"^([A-Z]+)(\d+):([A-Z]+)(\d+)$")
+
+
+def _col_letters_to_number(letters: str) -> int:
+    n = 0
+    for ch in letters:
+        n = n * 26 + (ord(ch) - ord("A") + 1)
+    return n
+
+
+def _parse_block(rest: str) -> BlockDirective:
+    body = rest.strip()
+    if body == "":
+        return BlockDirective()
+    m = _BLOCK_COL_RANGE_RE.match(body)
+    if m:
+        cs = _col_letters_to_number(m.group(1))
+        ce = _col_letters_to_number(m.group(2))
+        if cs > ce:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                f'@block col-range "{body}" — start column {m.group(1)} must be ≤ end column {m.group(2)}',
+            )
+        return BlockDirective(col_start=cs, col_end=ce)
+    m = _BLOCK_FULL_RECT_RE.match(body)
+    if m:
+        cs = _col_letters_to_number(m.group(1))
+        rs = int(m.group(2))
+        ce = _col_letters_to_number(m.group(3))
+        re_ = int(m.group(4))
+        if cs > ce:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                f'@block range "{body}" — start column must be ≤ end column',
+            )
+        if rs > re_:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                f'@block range "{body}" — start row {rs} must be ≤ end row {re_}',
+            )
+        if rs < 1:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                f'@block range "{body}" — row numbers must be ≥ 1',
+            )
+        return BlockDirective(col_start=cs, col_end=ce, row_start=rs, row_end=re_)
+    raise xtl_error(
+        "xl3/directive/invalid-syntax",
+        f'@block argument "{body}" — expected bare form, col-range (A:D), '
+        "or full rectangle (A2:D7) per ADR-0067",
+    )
 
 
 _BRACKET_COL_RE = re.compile(r"^\[\s*([^\]]+?)\s*\]\s*(.*)$", re.DOTALL)

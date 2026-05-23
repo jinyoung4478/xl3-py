@@ -17,11 +17,12 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 ---
 
-## Status (2026-05-23)
+## Status (2026-05-24)
 
-Synced to **xl3 0.7.0** (ADR-0051..0065 syntactic-conflict batch + ADR-0021
-/ 0041 amendments). Conformance: **133 / 133 stage-1 fixtures passing** (6
-stage-2 skipped — canonical OOXML comparison out of scope for v0.1).
+Synced to **xl3 0.8.0** (ADRs 0066–0069 — column-scoped data block, `@block`
+directive, multi-block detection + per-block directive scoping; plus the
+issue #46 / #47 fixes). Conformance: **148 / 148 stage-1 fixtures passing**
+(6 stage-2 skipped — canonical OOXML comparison out of scope for v0.1).
 
 Sync history:
 
@@ -29,7 +30,59 @@ Sync history:
 |---|---|---|
 | 0.1.0a0 / 0a1 / 0a2 | 0.1.0 (foundation) | 91 / 91 — xl3 issue #1 batch resolved |
 | _no port release_ | 0.4 / 0.5 / 0.6 | corpus grew to 133 fixtures; previous port lagged |
-| **0.1.0a3** | **0.7.0** | **133 / 133** — full backlog closed in one batch |
+| 0.1.0a3 | 0.7.0 | 133 / 133 — full backlog closed in one batch |
+| **0.1.0a4** | **0.8.0** | **148 / 148** — column-scoped block + multi-block (ADRs 0066–0069) |
+
+### 0.1.0a4 sync notes (xl3 0.8.0 absorption)
+
+The 0.8.0 ADRs are a structural change: a sheet is now a set of column-
+scoped data blocks instead of a row-wide expansion. The Python port
+followed the TS reference impl closely with these port-specific calls:
+
+- **Implicit / explicit mode toggle.** `_parse_sheet_template` now runs a
+  mode-determination pass: any `BlockDirective` on the sheet flips the
+  parser into explicit mode (ADR-0068). Implicit-mode cluster detection
+  raises `xl3/expression/bracket-outside-block` if two or more disconnected
+  marker clusters exist; explicit-mode adds overlap, empty-table,
+  orphan-marker and orphan-directive checks.
+- **Bare-identifier classifier (`BracketRef.bracketed`).** ADR-0066's
+  "data marker" set is TRULY bracketed `[col]` cells only — bare-ident
+  group-key refs like `{{ Customer }}` do NOT trigger column-scoped block
+  detection (matching TS's `isDataExpression`). The Python expression
+  parser previously rewrote bare-ident to `BracketRef(name)` without a
+  flag; a new `bracketed: bool = True` field lets the
+  `expression_has_data_marker_ref` walker distinguish the two while
+  keeping the per-row evaluation path unchanged. Fixtures 006 / 007 / 049
+  / 085 exercise this distinction.
+- **Outside-cell preservation (`SheetTemplate.outside_cells`).** Cells
+  outside every block's col-range are tracked as a separate list and
+  emitted at their original `(row, col)` template positions AFTER the
+  main plan walk, so they survive the renderer's clear pass and stay at
+  their original row regardless of any block's expansion factor. Cells in
+  the block-cols stripe ABOVE / BELOW a block become normal `StaticRowPlan`
+  entries and shift naturally with the `out_row` advance.
+- **Multi-block per template row.** The renderer groups plan entries by
+  `template_row` so side-by-side blocks (fixtures 146 / 147 / 154 / 155)
+  emit at the same `out_row` anchor and advance `out_row` by the maximum
+  expansion across the group. Stacked-block layouts (fixture 148) fall
+  out naturally because each block sits on its own template row.
+- **Static-row group-key resolution.** `_emit_static` / `_emit_outside_cells`
+  now seed `active_row` with the file/sheet bucket's first row so
+  bare-identifier group-key references inside a static cell resolve
+  correctly (the TS impl achieves this by overlaying `fileKey.values`
+  onto the static context).
+- **Issue #46 shared-formula owner.** No port-side change needed — openpyxl
+  unshares shared-formula references at write time, so the duplicate-owner
+  failure mode never materializes on the Python side. Fixture 143 verifies
+  this empirically.
+- **Subtotal bad-aggregate ordering.** Subtotal aggregate validation is
+  now eager in `_classify_cells` so `xl3/subtotal/bad-aggregate` fires
+  before `xl3/subtotal/outside-group` for templates that have both (fixture
+  138's `@subtotal STDEV([Amount])`).
+
+No new port-side findings beyond what's already covered in the TS spec.
+The conformance corpus grew from 133 to 148 stage-1 fixtures; all closed
+in one batch.
 
 The 0.1.0a3 sync (this file's most recent batch) covered both the new
 0.7.0 normative shape (ADR-0051..0065 + amendments) and twelve pre-0.7

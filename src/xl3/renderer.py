@@ -43,6 +43,7 @@ from .expression import (
 from .grouper import group_key_canonical
 from .parser import (
     DataRowPlan,
+    OutsideCell,
     ParsedTemplate,
     SheetTemplate,
     StaticRowPlan,
@@ -321,15 +322,31 @@ def _render_sheet(
 ) -> None:
     # Cache cell styles before mutating the worksheet.
     style_cache = _capture_styles(ws, st)
+    # Capture styles for outside cells too so we can restore them.
+    for oc in st.outside_cells:
+        if (oc.row, oc.col) in style_cache:
+            continue
+        cell = ws.cell(row=oc.row, column=oc.col)
+        style_cache[(oc.row, oc.col)] = (
+            copy(cell.font),
+            copy(cell.fill),
+            copy(cell.border),
+            copy(cell.alignment),
+            copy(cell.number_format),
+        )
 
     # Compute the row range we need to clear: all rows referenced by the plan
-    # PLUS any directive-only rows. Directive rows must be stripped from the
-    # output; if we leave them populated we'd emit literal `{{ @repeat right }}`
-    # text (fixture 004 regression).
+    # PLUS any directive-only rows PLUS rows of outside cells (so the original
+    # template text gets blanked before we re-emit outside cells with their
+    # parsed template values).
     template_rows_used: set[int] = set()
     for plan in st.plan:
         template_rows_used.add(plan.template_row)
+        if isinstance(plan, DataRowPlan):
+            for srp in plan.subtotal_rows:
+                template_rows_used.add(srp.template_row)
     template_rows_used |= st.directive_only_rows
+    template_rows_used |= {oc.row for oc in st.outside_cells}
     if template_rows_used:
         min_r = min(template_rows_used)
         max_r = ws.max_row or max(template_rows_used)
@@ -337,42 +354,60 @@ def _render_sheet(
             for c in range(1, st.max_col + 1):
                 ws.cell(row=r, column=c).value = None
 
-    out_row = min(template_rows_used) if template_rows_used else 1
-    # ADR-0021: preserve intentional empty template rows between plans.
-    # When two consecutive plans have a gap of empty rows (and no
-    # directive rows) between them in the template, that gap shifts the
-    # output position by the same amount so static formulas in static
-    # cells keep their relative-position semantics.
-    last_template_row: int | None = None
+    # Group plan entries by template_row so multi-block sheets emit all
+    # blocks anchored at the same template row in parallel (each block at
+    # its own col-range, sharing the same out_row anchor).
+    grouped: list[tuple[int, list[StaticRowPlan | DataRowPlan]]] = []
     for plan in st.plan:
+        if grouped and grouped[-1][0] == plan.template_row:
+            grouped[-1][1].append(plan)
+        else:
+            grouped.append((plan.template_row, [plan]))
+
+    out_row = min(template_rows_used) if template_rows_used else 1
+    last_template_row: int | None = None
+    for template_row, entries in grouped:
         if last_template_row is not None:
-            gap = plan.template_row - last_template_row - 1
-            # Subtract any directive-only template rows that fall in this
-            # gap — those were stripped from output, not preserved.
+            gap = template_row - last_template_row - 1
             directive_rows_in_gap = sum(
                 1
                 for r in st.directive_only_rows
-                if last_template_row < r < plan.template_row
+                if last_template_row < r < template_row
             )
             preserved_empty = gap - directive_rows_in_gap
             if preserved_empty > 0:
                 out_row += preserved_empty
-        if isinstance(plan, StaticRowPlan):
-            _emit_static(ws, plan, out_row, style_cache, sources, config_values, inputs)
-            out_row += 1
-            last_template_row = plan.template_row
-        else:
-            out_row = _emit_data_block(
-                ws,
-                plan,
-                out_row,
-                sources,
-                style_cache,
-                config_values,
-                inputs,
-            )
-            # A data block covers its template row plus any subtotal rows.
-            last_template_row = plan.template_row + len(plan.subtotal_rows)
+
+        # All entries on a shared template_row share the same out_row anchor.
+        next_out_rows: list[int] = []
+        for plan in entries:
+            if isinstance(plan, StaticRowPlan):
+                _emit_static(
+                    ws, plan, out_row, style_cache, sources, config_values, inputs
+                )
+                next_out_rows.append(out_row + 1)
+            else:
+                after = _emit_data_block(
+                    ws, plan, out_row, sources, style_cache, config_values, inputs
+                )
+                next_out_rows.append(after)
+
+        out_row = max(next_out_rows) if next_out_rows else out_row
+        # `last_template_row` advances to cover any subtotal rows in this group.
+        last_template_row = template_row
+        for plan in entries:
+            if isinstance(plan, DataRowPlan):
+                end = plan.template_row + len(plan.subtotal_rows)
+                if end > last_template_row:
+                    last_template_row = end
+
+    # ADR-0066: outside cells preserved at their ORIGINAL row positions,
+    # regardless of any block expansion. Emit AFTER the main plan so we
+    # overwrite whatever (cleared/shifted) state lives at those coordinates.
+    if st.outside_cells:
+        _emit_outside_cells(
+            ws, st.outside_cells, style_cache, sources, config_values, inputs
+        )
 
 
 def _capture_styles(
@@ -407,6 +442,39 @@ def _apply_style(cell: Cell, style: Any) -> None:
     cell.number_format = fmt
 
 
+def _emit_outside_cells(
+    ws: Any,
+    outside_cells: list[OutsideCell],
+    style_cache: dict[tuple[int, int], Any],
+    sources: dict[str, SourceData],
+    config_values: dict[str, Any],
+    inputs: dict[str, Any],
+) -> None:
+    """ADR-0066: emit outside-block cells at their ORIGINAL `(row, col)`
+    template positions. Outside cells are evaluated with the file/sheet
+    group's first row as active row (so bare-identifier group-key refs
+    still resolve) plus the usual cross-source aggregate machinery."""
+    default_source = sources.get("default")
+    active_row: dict[str, Any] = {}
+    if default_source and default_source.rows:
+        active_row = dict(default_source.rows[0])
+    ctx = EvalContext(
+        active_row=active_row,
+        inputs=inputs,
+        config_values=config_values,
+        active_source_columns=None,
+        named_sources=_build_named_sources_view(sources),
+        active_row_set=list(default_source.rows) if default_source else None,
+    )
+    for oc in outside_cells:
+        value = _render_cell(oc.cell.template, ctx)
+        style = style_cache.get((oc.row, oc.col))
+        if oc.cell.template.is_single_expression and style is not None:
+            value = _apply_numfmt_coercion(value, style[4])
+        target = _write_cell_value(ws, oc.row, oc.col, value)
+        _apply_style(target, style)
+
+
 def _emit_static(
     ws: Any,
     plan: StaticRowPlan,
@@ -420,9 +488,18 @@ def _emit_static(
     # over named sources, so expose them on the context. The default
     # source's full row set serves as `active_row_set` for bare-bracket
     # aggregates that appear in static cells (e.g., a totals row).
+    # ADR-0026 group keys: bare-identifier refs in a static cell resolve
+    # against the file/sheet bucket's first row (the TS impl overlays the
+    # group-key values onto the static context). Using the first row of the
+    # filtered default source preserves the resolution for fixtures 006 /
+    # 007 / 049 / 085 even though the cell is no longer classified as a
+    # data marker row under ADR-0066.
     default_source = sources.get("default")
+    active_row: dict[str, Any] = {}
+    if default_source and default_source.rows:
+        active_row = dict(default_source.rows[0])
     ctx = EvalContext(
-        active_row={},
+        active_row=active_row,
         inputs=inputs,
         config_values=config_values,
         active_source_columns=None,
