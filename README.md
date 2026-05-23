@@ -9,14 +9,41 @@ TypeScript reference impl as portability validation: if both implementations
 produce identical output for the same conformance corpus, the spec is real.
 
 - **Spec & TS reference**: <https://github.com/jinyoung4478/xl3>
-  (XTL spec **0.1.0** released 2026-05-08).
-- **Conformance status (xl3 0.7.0 corpus)**: **133 / 133 stage-1 fixtures
+  (XTL spec **0.1.0** released 2026-05-08; spec corpus currently at
+  xl3 **0.8.0**).
+- **Conformance status (xl3 0.8.0 corpus)**: **148 / 148 stage-1 fixtures
   passing (100%)** — 6 stage-2 fixtures skipped (canonical OOXML comparison
   out of scope for v0.1).
   The 5 spec/impl ambiguities found while building this port were filed as
   [xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) and resolved
   upstream the same day; see `PORTING_NOTES.md` for the full sync log
-  (0.5 → 0.6 → 0.7).
+  (0.5 → 0.6 → 0.7 → 0.8).
+
+### Sync to xl3 0.8.0 (`0.1.0a4`, 2026-05-23)
+
+Absorbs the **column-scoped data block** rework (ADR-0066) plus the
+new **`@block`** directive surface (ADRs 0067/0068/0069):
+
+- Data-block geometry is now the bounding box of `{{ ... }}` markers
+  extended through adjacent non-empty cells. Cells outside that range
+  keep their original row positions when the block expands, so side
+  summary tables and header columns no longer get pushed around.
+  Closes upstream [#46](https://github.com/jinyoung4478/xl3/issues/46)
+  (duplicate shared-formula owners) and
+  [#47](https://github.com/jinyoung4478/xl3/issues/47) (stale formula
+  refs in displaced side cells).
+- New `@block` directive (3 forms): bare `{{ @block }}`, column-range
+  `{{ @block A:D }}`, full-rect `{{ @block A2:D7 }}`. Opting into
+  `@block` enables strict multi-block detection and proximity-based
+  directive scoping.
+- 4 new error codes: `xl3/expression/bracket-outside-block`,
+  `xl3/block/overlap`, `xl3/block/empty-table`, `xl3/directive/orphan`.
+- Backward compatible: templates without `@block` and without
+  outside-column content render identically to xl3 0.7.x.
+
+See `PORTING_NOTES.md` for port-specific notes (implicit/explicit mode,
+the no-op for #46 since openpyxl already unshares shared formulas,
+subtotal validation ordering).
 
 ## Install
 
@@ -112,11 +139,11 @@ python -m xl3.runner --id-prefix 050
 Output sample:
 
 ```
-xl3-py 0.1.0a3 — XTL 0.1 (stage 1)
+xl3-py 0.1.0a4 — XTL 0.1 (stage 1)
   pass   001-bracket-substitution
   pass   002-if-function
   ...
-summary: 133/133 passed, 0 failed, 6 skipped
+summary: 148/148 passed, 0 failed, 6 skipped
 ```
 
 ## What is supported
@@ -127,9 +154,13 @@ summary: 133/133 passed, 0 failed, 6 skipped
 | `IF` / `IFEMPTY` / `ROUND` / `ABS` / `TEXT` / `TODAY` / `ROW` | ✅ |
 | Aggregates `SUM` / `COUNT` / `AVERAGE` / `MIN` / `MAX` | ✅ |
 | `XLOOKUP` (3-arg + 4-arg) | ✅ |
-| Directives `@filter` / `@sort` / `@top` / `@repeat right` / `@source` / `@join` | ✅ |
+| Directives `@filter` / `@sort` / `@top` / `@repeat right` / `@source` / `@join` / `@group` / `@subtotal` / `@block` | ✅ |
 | `__config__` / `__inputs__` / `__sources__` / `__lists__` reserved sheets | ✅ |
-| ADR-0007 / 0008 / 0009 / 0017 value model | ✅ (82 unit tests pinning the contract) |
+| ADR-0007 / 0008 / 0009 / 0017 value model | ✅ (83 unit tests pinning the contract) |
+| ADR-0033 / 0035 merged-cell headers + master-broadcast (xl3 0.5/0.6) | ✅ |
+| ADR-0038 `@group` / `@subtotal` (xl3 0.6) | ✅ |
+| ADR-0051..0065 syntactic-conflict batch (xl3 0.7) | ✅ |
+| ADR-0066..0069 column-scoped data block + `@block` + multi-block (xl3 0.8) | ✅ |
 | ADR-0002 filename sanitization | ✅ |
 | ADR-0003 numFmt-driven coercion | ✅ |
 | ADR-0010 runtime inputs (text / number / date / select) | ✅ |
