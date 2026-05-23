@@ -10,11 +10,13 @@ produce identical output for the same conformance corpus, the spec is real.
 
 - **Spec & TS reference**: <https://github.com/jinyoung4478/xl3>
   (XTL spec **0.1.0** released 2026-05-08).
-- **Conformance status**: **91 / 91 stage-1 fixtures passing (100%)** —
-  5 stage-2 fixtures skipped (canonical OOXML comparison out of scope for v0.1).
+- **Conformance status (xl3 0.7.0 corpus)**: **133 / 133 stage-1 fixtures
+  passing (100%)** — 6 stage-2 fixtures skipped (canonical OOXML comparison
+  out of scope for v0.1).
   The 5 spec/impl ambiguities found while building this port were filed as
   [xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) and resolved
-  upstream the same day; see `PORTING_NOTES.md`.
+  upstream the same day; see `PORTING_NOTES.md` for the full sync log
+  (0.5 → 0.6 → 0.7).
 
 ## Install
 
@@ -110,11 +112,11 @@ python -m xl3.runner --id-prefix 050
 Output sample:
 
 ```
-xl3-py 0.1.0a2 — XTL 0.1 (stage 1)
+xl3-py 0.1.0a3 — XTL 0.1 (stage 1)
   pass   001-bracket-substitution
   pass   002-if-function
   ...
-summary: 91/91 passed, 0 failed, 5 skipped
+summary: 133/133 passed, 0 failed, 6 skipped
 ```
 
 ## What is supported

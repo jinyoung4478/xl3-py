@@ -6,10 +6,11 @@ about openpyxl or template structure.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import xtl_error
+from .errors import XtlError, xtl_error
 from .expression import (
     BinOp,
     BoolLit,
@@ -23,9 +24,11 @@ from .expression import (
 )
 from .functions import get_simple_function
 from .value_model import (
+    DIV_ZERO_ERROR,
     canonical_string,
     compare_values,
     is_empty,
+    is_truthy,
     parse_number_strict,
 )
 
@@ -84,7 +87,7 @@ def evaluate(expr: Expr, ctx: EvalContext) -> Any:
         return _eval_source_ref(expr, ctx)
     if isinstance(expr, UnaryNeg):
         v = evaluate(expr.operand, ctx)
-        return -_to_number(v)
+        return -_to_number_strict(v, "-")
     if isinstance(expr, BinOp):
         return _eval_binop(expr, ctx)
     if isinstance(expr, FuncCall):
@@ -97,6 +100,15 @@ def _eval_source_ref(expr: SourceRef, ctx: EvalContext) -> Any:
         return ctx.inputs.get(expr.column)
     if expr.source == "__config__":
         return ctx.config_values.get(expr.column)
+    # ADR-0057: `__lists__[name]` is only legal as the RHS of an
+    # `@filter ... in / !in` directive. The filter parser consumes
+    # those uses directly; any other reference must raise.
+    if expr.source == "__lists__":
+        raise xtl_error(
+            "xl3/lists/invalid-use",
+            f"__lists__[{expr.column}] may only appear on the right-hand side "
+            "of `@filter [Col] in __lists__[name]` or `!in __lists__[name]`",
+        )
     # `<active_source>[Column]` resolves to the active row's column.
     if expr.source == ctx.active_source_name:
         return ctx.lookup_active_column(expr.column)
@@ -116,18 +128,45 @@ def _eval_source_ref(expr: SourceRef, ctx: EvalContext) -> Any:
     )
 
 
-def _to_number(v: Any) -> float:
+def _describe_operand(v: Any) -> str:
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return f"boolean {'TRUE' if v else 'FALSE'}"
+    if isinstance(v, str):
+        return f'string "{v}"'
+    return f"value of type {type(v).__name__}"
+
+
+def _to_number_strict(v: Any, op: str) -> float:
+    """ADR-0023: arithmetic operators require operands to coerce to a finite
+    number. Empty values coerce to 0 (Excel-compatible). Failures raise
+    `xl3/eval/operand-coercion`. Dates are rejected explicitly.
+    """
+    from datetime import date, datetime
+
     if isinstance(v, bool):
         return 1.0 if v else 0.0
-    if isinstance(v, (int, float)):
+    if isinstance(v, (int, float)) and not (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
         return float(v)
-    n = parse_number_strict(v)
-    if n is None:
-        # Excel coerces non-numeric to 0 in arithmetic; XTL doesn't pin this
-        # explicitly, so we follow ECMA Number() coercion: fail → NaN, which
-        # we surface via empty/non-finite handling.
-        return float("nan")
-    return n
+    if is_empty(v):
+        return 0.0
+    if isinstance(v, (datetime, date)):
+        raise xtl_error(
+            "xl3/eval/operand-coercion",
+            f'Operator "{op}" cannot coerce a Date to a number; use TEXT() or arithmetic upstream',
+        )
+    if isinstance(v, str):
+        # ADR-0023: cleaner removes thousands-separator commas before parse.
+        cleaned = v.strip().replace(",", "")
+        if cleaned != "":
+            n = parse_number_strict(cleaned)
+            if n is not None and not (math.isnan(n) or math.isinf(n)):
+                return n
+    raise xtl_error(
+        "xl3/eval/operand-coercion",
+        f'Operator "{op}" cannot coerce {_describe_operand(v)} to a number',
+    )
 
 
 def _eval_binop(expr: BinOp, ctx: EvalContext) -> Any:
@@ -136,16 +175,17 @@ def _eval_binop(expr: BinOp, ctx: EvalContext) -> Any:
         right = canonical_string(evaluate(expr.right, ctx))
         return left + right
     if expr.op in {"+", "-", "*", "/"}:
-        a = _to_number(evaluate(expr.left, ctx))
-        b = _to_number(evaluate(expr.right, ctx))
+        a = _to_number_strict(evaluate(expr.left, ctx), expr.op)
+        b = _to_number_strict(evaluate(expr.right, ctx), expr.op)
         if expr.op == "+":
             return a + b
         if expr.op == "-":
             return a - b
         if expr.op == "*":
             return a * b
+        # ADR-0025: division by zero produces an Excel-style #DIV/0! error cell.
         if b == 0:
-            return float("nan")  # division by zero — flow as empty per ADR-0009
+            return DIV_ZERO_ERROR
         return a / b
     if expr.op in {"=", "!=", ">", "<", ">=", "<="}:
         a = evaluate(expr.left, ctx)
@@ -167,13 +207,45 @@ def _eval_call(expr: FuncCall, ctx: EvalContext) -> Any:
     # ROW() — needs the repeat-block index from ctx.
     if name == "ROW":
         if len(expr.args) != 0:
-            raise xtl_error("xl3/cell/numfmt-coercion", "ROW() takes no arguments")
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"ROW: expected 0 arguments, got {len(expr.args)}",
+            )
         if ctx.row_index is None:
             raise xtl_error(
                 "xl3/cell/row-outside-repeat",
                 "ROW() called outside a repeat block",
             )
         return ctx.row_index
+    # IFS/IFERROR are lazy so unmatched branches and fallbacks are not evaluated.
+    if name == "IFS":
+        if len(expr.args) % 2 != 0:
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"IFS: expected an even number of arguments, got {len(expr.args)}",
+            )
+        for i in range(0, len(expr.args), 2):
+            if is_truthy(evaluate(expr.args[i], ctx)):
+                return evaluate(expr.args[i + 1], ctx)
+        raise xtl_error("xl3/eval/no-match", "IFS() no condition matched")
+    if name == "IFERROR":
+        if len(expr.args) != 2:
+            raise xtl_error(
+                "xl3/eval/arity-mismatch",
+                f"IFERROR: expected 2 arguments, got {len(expr.args)}",
+            )
+        try:
+            value = evaluate(expr.args[0], ctx)
+        except XtlError:
+            return evaluate(expr.args[1], ctx)
+        # ADR-0044: IFERROR also catches Excel error-cell markers (e.g. #DIV/0!).
+        from .value_model import is_xtl_error_cell
+
+        if is_xtl_error_cell(value):
+            return evaluate(expr.args[1], ctx)
+        if isinstance(value, float) and math.isnan(value):
+            return evaluate(expr.args[1], ctx)
+        return value
     # Aggregates — first arg is either a BracketRef (active row set) or a
     # SourceRef (named source's full row set). We DON'T evaluate the arg
     # eagerly; we inspect the AST to know which row set to fold over.
@@ -244,14 +316,15 @@ def _eval_aggregate(name: str, args: list[Any], ctx: EvalContext) -> Any:
         return len(ctx.active_row_set)
     if len(args) != 1:
         raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"{name} expects 1 argument, got {len(args)}",
+            "xl3/eval/arity-mismatch",
+            f"{name}: expected 1 argument, got {len(args)}",
         )
     arg_ast = args[0]
     rows, column, _src = _resolve_aggregate_target(arg_ast, ctx)
     if rows is None or column is None:
+        # ADR-0059: aggregate args MUST be column refs or Source[column] refs.
         raise xtl_error(
-            "xl3/cell/numfmt-coercion",
+            "xl3/eval/bad-aggregate-arg",
             f"{name} argument must be a column reference",
         )
     values = [r.get(column) for r in rows]
@@ -317,8 +390,8 @@ def _eval_xlookup(args: list[Any], ctx: EvalContext) -> Any:
 
     if len(args) not in (3, 4):
         raise xtl_error(
-            "xl3/cell/numfmt-coercion",
-            f"XLOOKUP expects 3 or 4 arguments, got {len(args)}",
+            "xl3/eval/arity-mismatch",
+            f"XLOOKUP: expected 3 or 4 arguments, got {len(args)}",
         )
     lookup_value = evaluate(args[0], ctx)
     lookup_arg = args[1]

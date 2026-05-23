@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +116,7 @@ def _run_error(fx: Fixture, exc: Exception) -> tuple[bool, str]:
 
 
 def run(args: argparse.Namespace) -> int:
-    runner_start = datetime.now(timezone.utc)
+    runner_start = datetime.now(UTC)
     fixtures = discover_fixtures(args.fixture_dir)
 
     results: list[dict[str, Any]] = []

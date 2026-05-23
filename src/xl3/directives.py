@@ -22,13 +22,11 @@ from typing import Any, Literal
 from .errors import xtl_error
 from .expression import (
     BinOp,
-    BracketRef,
     Expr,
     SourceRef,
     parse_expression,
 )
 from .value_model import canonical_string, compare_values, is_empty
-
 
 # ---------------------------------------------------------------------------
 # Directive AST
@@ -79,6 +77,11 @@ class JoinDirective:
     primary_column: str
 
 
+@dataclass
+class GroupDirective:
+    keys: list[str]
+
+
 Directive = (
     FilterDirective
     | SortDirective
@@ -86,6 +89,7 @@ Directive = (
     | RepeatRightDirective
     | SourceDirective
     | JoinDirective
+    | GroupDirective
 )
 
 
@@ -123,6 +127,8 @@ def parse_directive(body: str) -> Directive:
         return _parse_source(rest)
     if name == "join":
         return _parse_join(rest)
+    if name == "group":
+        return _parse_group(rest)
     raise DirectiveParseError(f"unknown directive @{name}")
 
 
@@ -178,14 +184,15 @@ def _parse_sort(rest: str) -> SortDirective:
     return SortDirective(keys=[SortKey(column=column, direction=direction)])
 
 
+_POSITIVE_INT_RE = re.compile(r"^[1-9][0-9]*$")
+
+
 def _parse_top(rest: str) -> TopDirective:
-    try:
-        n = int(rest.strip())
-    except ValueError as e:
-        raise DirectiveParseError(f"@top N must be an integer, got {rest!r}") from e
-    if n < 0:
-        raise DirectiveParseError(f"@top N must be non-negative, got {n}")
-    return TopDirective(n=n)
+    # ADR-0055: positive_integer grammar — no leading zeros, no zero, no negative.
+    body = rest.strip()
+    if not _POSITIVE_INT_RE.match(body):
+        raise DirectiveParseError(f"@top N must be a positive integer (no leading zeros), got {rest!r}")
+    return TopDirective(n=int(body))
 
 
 def _parse_repeat(rest: str) -> RepeatRightDirective:
@@ -197,13 +204,12 @@ def _parse_repeat(rest: str) -> RepeatRightDirective:
         raise DirectiveParseError(f"@repeat direction must be 'right', got {direction!r}")
     if len(parts) == 1:
         return RepeatRightDirective(col_span=1)
-    try:
-        span = int(parts[1])
-    except ValueError as e:
-        raise DirectiveParseError(f"@repeat right N must be an integer, got {parts[1]!r}") from e
-    if span < 1:
-        raise DirectiveParseError(f"@repeat right N must be >= 1, got {span}")
-    return RepeatRightDirective(col_span=span)
+    # ADR-0055: positive_integer grammar applies to @repeat right N as well.
+    if not _POSITIVE_INT_RE.match(parts[1]):
+        raise DirectiveParseError(
+            f"@repeat right N must be a positive integer (no leading zeros), got {parts[1]!r}"
+        )
+    return RepeatRightDirective(col_span=int(parts[1]))
 
 
 def _parse_source(rest: str) -> SourceDirective:
@@ -251,12 +257,38 @@ def _parse_join(rest: str) -> JoinDirective:
         raise DirectiveParseError(
             "@join key columns must reference the joined and primary sources"
         )
+    # ADR-0029: self-join (joined source same as primary) is intentionally
+    # out of scope for XTL 0.x. Tree/hierarchy joins need different semantics
+    # (recursive resolution, multiple matches per row) per ADR-0014.
+    if joined == primary_source:
+        raise xtl_error(
+            "xl3/join/bad-on-clause",
+            f'@join cannot reference the same source on both sides ("{joined}"). '
+            "Self-joins are intentionally out of scope for XTL 0.x.",
+        )
     return JoinDirective(
         joined_source=joined,
         primary_source=primary_source,
         joined_column=joined_col,
         primary_column=primary_col,
     )
+
+
+def _parse_group(rest: str) -> GroupDirective:
+    if rest.strip() == "":
+        raise DirectiveParseError("@group requires at least one column key")
+    parts = [p.strip() for p in rest.split(",") if p.strip()]
+    if not parts:
+        raise DirectiveParseError("@group requires at least one column key")
+    keys: list[str] = []
+    for part in parts:
+        m = re.fullmatch(r"\[\s*([^\]\r\n]+?)\s*\]", part, re.DOTALL)
+        if not m:
+            raise DirectiveParseError(
+                f"@group key must be a [Column] reference; got {part!r}"
+            )
+        keys.append(m.group(1).strip())
+    return GroupDirective(keys=keys)
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +306,23 @@ class BlockDirectives:
     sorts: list[SortDirective] = field(default_factory=list)
     top: TopDirective | None = None
     repeat_right: RepeatRightDirective | None = None
+    group: GroupDirective | None = None
     raw: list[Directive] = field(default_factory=list)
 
     def add(self, d: Directive) -> None:
+        # ADR-0029: at most one @source and one @join per data block.
+        if isinstance(d, SourceDirective) and self.source_directive is not None:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                "Duplicate @source directive in the same data block. "
+                "Each block may declare at most one active source.",
+            )
+        if isinstance(d, JoinDirective) and self.join_directive is not None:
+            raise xtl_error(
+                "xl3/directive/invalid-syntax",
+                "Duplicate @join directive in the same data block. "
+                "Multi-join is intentionally out of scope for XTL 0.x (ADR-0014).",
+            )
         self.raw.append(d)
         if isinstance(d, SourceDirective):
             self.source_directive = d
@@ -290,6 +336,8 @@ class BlockDirectives:
             self.top = d
         elif isinstance(d, RepeatRightDirective):
             self.repeat_right = d
+        elif isinstance(d, GroupDirective):
+            self.group = d
 
 
 def apply_filters(
@@ -378,7 +426,7 @@ class _SortableKey:
         self.v = v
         self.reverse = reverse
 
-    def __lt__(self, other: "_SortableKey") -> bool:
+    def __lt__(self, other: _SortableKey) -> bool:
         c = compare_values(self.v, other.v)
         if self.reverse:
             c = -c

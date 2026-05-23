@@ -6,7 +6,7 @@ fill defaults. Missing required inputs are an error.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 from .errors import xtl_error
@@ -91,7 +91,7 @@ def _coerce(spec: InputSpec, raw: Any) -> Any:
 def _coerce_date(raw: Any) -> datetime | date | None:
     if isinstance(raw, datetime):
         if raw.tzinfo is not None:
-            return raw.astimezone(timezone.utc).replace(tzinfo=None)
+            return raw.astimezone(UTC).replace(tzinfo=None)
         return raw
     if isinstance(raw, date):
         return raw

@@ -27,7 +27,6 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 
 from .directives import (
-    BlockDirectives,
     JoinDirective,
     apply_filters,
     apply_sorts,
@@ -41,17 +40,18 @@ from .expression import (
     ExprSegment,
     TextSegment,
 )
+from .grouper import group_key_canonical
 from .parser import (
     DataRowPlan,
     ParsedTemplate,
     SheetTemplate,
     StaticRowPlan,
-    TemplateCell,
+    SubtotalCell,
     is_reserved_sheet,
 )
 from .reader import SourceData
 from .types import OutputFile
-from .value_model import canonical_string
+from .value_model import canonical_string, is_empty, parse_number_strict
 
 
 def render(
@@ -78,6 +78,10 @@ def render(
         file_groups = [_GroupBucket(key=(), rows=[])]
 
     files: list[OutputFile] = []
+    # ADR-0031: detect filename collisions across file groups before rendering
+    # any of them. Two distinct group keys that sanitize to the same filename
+    # would otherwise silently overwrite each other in host code.
+    seen_filenames: set[str] = set()
     for bucket in file_groups:
         # Build a per-file sources dict with the default's rows narrowed to
         # this file's bucket. Named sources keep their full row sets.
@@ -116,6 +120,18 @@ def render(
 
         filename = _evaluate_filename(parsed, file_sources, config_values, inputs)
         sanitized, _warning = _sanitize_via_filename_module(filename)
+        if sanitized in seen_filenames:
+            from .errors import xtl_error
+
+            raise xtl_error(
+                "xl3/filename/collision",
+                f'Output filename "{sanitized}" is produced by multiple file groups '
+                "(their group key values collapse to the same sanitized filename). "
+                "Make group keys distinct upstream — different cell values that "
+                'share only forbidden characters (e.g., "Seoul/Korea" and "Seoul:Korea") '
+                'both sanitize to "Seoul_Korea".',
+            )
+        seen_filenames.add(sanitized)
         files.append(OutputFile(filename=sanitized, data=out_io.getvalue()))
     return files
 
@@ -137,20 +153,32 @@ class _GroupBucket:
 _BARE_IDENT_BLOCK_RE = __import__("re").compile(
     r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}"
 )
+_BRACKET_REF_BLOCK_RE = __import__("re").compile(
+    r"\{\{\s*\[\s*([^\]\r\n]+?)\s*\]\s*\}\}"
+)
+
+
+def _extract_group_keys(pattern: str) -> list[str]:
+    """Both `{{ Region }}` and `{{ [Region] }}` in file/sheet patterns are
+    group-key references per `language.md` §"Group Keys" + ADR-0026. They
+    partition rows into file/sheet buckets. Expressions with operators,
+    function calls, or `__config__[...]` / source-prefixed shapes are NOT
+    group keys and evaluate against the bucket's first row instead.
+    """
+    keys: list[str] = []
+    for m in _BARE_IDENT_BLOCK_RE.finditer(pattern):
+        keys.append(m.group(1))
+    for m in _BRACKET_REF_BLOCK_RE.finditer(pattern):
+        keys.append(m.group(1))
+    return keys
 
 
 def _extract_file_group_keys(pattern: str) -> list[str]:
-    """Bare-identifier `{{ X }}` blocks in the output_file_pattern are file
-    group keys. Bracketed `{{ [Col] }}` is a row-substitution, not a group
-    key — those expressions evaluate against the first row of each file
-    group, not partition the rows.
-    """
-    return [m.group(1) for m in _BARE_IDENT_BLOCK_RE.finditer(pattern)]
+    return _extract_group_keys(pattern)
 
 
 def _extract_sheet_group_keys(sheet_name: str) -> list[str]:
-    """Bare-identifier `{{ X }}` blocks in a sheet name are sheet group keys."""
-    return [m.group(1) for m in _BARE_IDENT_BLOCK_RE.finditer(sheet_name)]
+    return _extract_group_keys(sheet_name)
 
 
 def _partition_first_seen(
@@ -166,7 +194,10 @@ def _partition_first_seen(
     seen: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     order: list[tuple[Any, ...]] = []
     for r in rows:
-        key = tuple(canonical_string(r.get(k)) for k in group_keys)
+        # ADR-0026: empty canonical-string values use the "(blank)" placeholder
+        # so file/sheet names render predictably (e.g. "(blank).xlsx") rather
+        # than producing a sanitization error or a generic fallback.
+        key = tuple(group_key_canonical(r.get(k)) for k in group_keys)
         if key not in seen:
             seen[key] = []
             order.append(key)
@@ -199,8 +230,14 @@ def _render_grouped_sheet(
     template_ws = wb[st.original_name]
     new_sheets: list[tuple[str, _GroupBucket]] = []
     for bucket in buckets:
-        new_name = canonical_string(bucket.key[0]) if len(bucket.key) == 1 else "_".join(
-            canonical_string(v) for v in bucket.key
+        # Bucket keys are already canonical-string with the "(blank)"
+        # placeholder applied by _partition_first_seen (ADR-0026), so the
+        # resulting sheet name is always non-empty when there is at least
+        # one group key.
+        new_name = (
+            str(bucket.key[0])
+            if len(bucket.key) == 1
+            else "_".join(str(v) for v in bucket.key)
         )
         if not new_name:
             new_name = st.original_name
@@ -301,10 +338,29 @@ def _render_sheet(
                 ws.cell(row=r, column=c).value = None
 
     out_row = min(template_rows_used) if template_rows_used else 1
+    # ADR-0021: preserve intentional empty template rows between plans.
+    # When two consecutive plans have a gap of empty rows (and no
+    # directive rows) between them in the template, that gap shifts the
+    # output position by the same amount so static formulas in static
+    # cells keep their relative-position semantics.
+    last_template_row: int | None = None
     for plan in st.plan:
+        if last_template_row is not None:
+            gap = plan.template_row - last_template_row - 1
+            # Subtract any directive-only template rows that fall in this
+            # gap — those were stripped from output, not preserved.
+            directive_rows_in_gap = sum(
+                1
+                for r in st.directive_only_rows
+                if last_template_row < r < plan.template_row
+            )
+            preserved_empty = gap - directive_rows_in_gap
+            if preserved_empty > 0:
+                out_row += preserved_empty
         if isinstance(plan, StaticRowPlan):
             _emit_static(ws, plan, out_row, style_cache, sources, config_values, inputs)
             out_row += 1
+            last_template_row = plan.template_row
         else:
             out_row = _emit_data_block(
                 ws,
@@ -315,6 +371,8 @@ def _render_sheet(
                 config_values,
                 inputs,
             )
+            # A data block covers its template row plus any subtotal rows.
+            last_template_row = plan.template_row + len(plan.subtotal_rows)
 
 
 def _capture_styles(
@@ -322,15 +380,19 @@ def _capture_styles(
 ) -> dict[tuple[int, int], Any]:
     cache: dict[tuple[int, int], Any] = {}
     for plan in st.plan:
-        for c in range(1, st.max_col + 1):
-            cell = ws.cell(row=plan.template_row, column=c)
-            cache[(plan.template_row, c)] = (
-                copy(cell.font),
-                copy(cell.fill),
-                copy(cell.border),
-                copy(cell.alignment),
-                copy(cell.number_format),
-            )
+        rows = [plan.template_row]
+        if isinstance(plan, DataRowPlan):
+            rows.extend(srow.template_row for srow in plan.subtotal_rows)
+        for row_num in rows:
+            for c in range(1, st.max_col + 1):
+                cell = ws.cell(row=row_num, column=c)
+                cache[(row_num, c)] = (
+                    copy(cell.font),
+                    copy(cell.fill),
+                    copy(cell.border),
+                    copy(cell.alignment),
+                    copy(cell.number_format),
+                )
     return cache
 
 
@@ -372,7 +434,7 @@ def _emit_static(
         style = style_cache.get((plan.template_row, tc.col))
         if tc.template.is_single_expression and style is not None:
             value = _apply_numfmt_coercion(value, style[4])
-        target = ws.cell(row=out_row, column=tc.col, value=value)
+        target = _write_cell_value(ws, out_row, tc.col, value)
         _apply_style(target, style)
 
 
@@ -442,6 +504,22 @@ def _emit_data_block(
             kept_pairs.append(match)
         rows = kept
         joined_rows_for_primary = list(kept_pairs)  # type: ignore[assignment]
+
+    if bd.group is not None:
+        return _emit_grouped_block(
+            ws,
+            plan,
+            out_row,
+            rows,
+            joined_rows_for_primary,
+            join,
+            sources,
+            active_source_name,
+            primary,
+            style_cache,
+            config_values,
+            inputs,
+        )
 
     # Repeat-right vs default vertical expansion.
     if bd.repeat_right is not None:
@@ -522,6 +600,126 @@ def _first_match(
     return None
 
 
+def _numeric_values(rows: list[dict[str, Any]], column: str | None) -> list[float]:
+    nums: list[float] = []
+    if column is None:
+        return nums
+    for row in rows:
+        value = row.get(column)
+        if is_empty(value):
+            continue
+        if isinstance(value, bool):
+            nums.append(1.0 if value else 0.0)
+        elif isinstance(value, (int, float)):
+            nums.append(float(value))
+        else:
+            parsed = parse_number_strict(value)
+            if parsed is not None:
+                nums.append(parsed)
+    return nums
+
+
+def _eval_subtotal(sc: SubtotalCell, rows: list[dict[str, Any]]) -> Any:
+    if sc.aggregate == "COUNT":
+        if sc.column is None:
+            return len(rows)
+        return sum(1 for row in rows if not is_empty(row.get(sc.column)))
+    if sc.aggregate in ("SUM", "AVERAGE"):
+        nums = _numeric_values(rows, sc.column)
+        if sc.aggregate == "SUM":
+            return sum(nums) if nums else 0
+        return sum(nums) / len(nums) if nums else 0
+    if sc.aggregate in ("MIN", "MAX") and sc.column is not None:
+        from .evaluator import _aggregate_extremum
+
+        return _aggregate_extremum(
+            [row.get(sc.column) for row in rows], sc.aggregate.lower()
+        )
+    raise xtl_error(
+        "xl3/subtotal/bad-aggregate",
+        "@subtotal accepts SUM, COUNT, AVERAGE, MIN, MAX only",
+    )
+
+
+def _emit_grouped_block(
+    ws: Any,
+    plan: DataRowPlan,
+    out_row: int,
+    rows: list[dict[str, Any]],
+    joined_rows: list[dict[str, Any] | None],
+    join: JoinDirective | None,
+    sources: dict[str, SourceData],
+    active_source_name: str,
+    primary: SourceData,
+    style_cache: dict[tuple[int, int], Any],
+    config_values: dict[str, Any],
+    inputs: dict[str, Any],
+) -> int:
+    from .grouper import partition_by_group_keys, plan_emission_events
+
+    group = plan.directives.group
+    if group is None:
+        return out_row
+    tree = partition_by_group_keys(rows, group.keys)
+    events = plan_emission_events(tree, len(group.keys))
+    joined_by_row = {id(row): joined_rows[i] for i, row in enumerate(rows)}
+    data_index = 0
+
+    for ev in events:
+        if ev.kind == "data":
+            assert ev.row is not None
+            ctx = _build_row_context(
+                ev.row,
+                joined_by_row.get(id(ev.row)),
+                join,
+                sources,
+                active_source_name,
+                primary,
+                data_index + 1,
+                config_values,
+                inputs,
+                rows,
+            )
+            for tc in plan.cells:
+                value = _render_cell(tc.template, ctx)
+                style = style_cache.get((plan.template_row, tc.col))
+                if tc.template.is_single_expression and style is not None:
+                    value = _apply_numfmt_coercion(value, style[4])
+                target = _write_cell_value(ws, out_row, tc.col, value)
+                _apply_style(target, style)
+            out_row += 1
+            data_index += 1
+            continue
+
+        level_idx = ev.level - 1
+        if level_idx >= len(plan.subtotal_rows):
+            continue
+        srow = plan.subtotal_rows[level_idx]
+        subtotal_by_col = {sc.col: sc for sc in srow.subtotals}
+        ctx = EvalContext(
+            active_row={},
+            active_source_name=active_source_name,
+            active_source_columns=set(primary.headers) if primary.headers else None,
+            inputs=inputs,
+            config_values=config_values,
+            active_row_set=ev.group_rows,
+            named_sources=_build_named_sources_view(sources),
+        )
+        for tc in srow.cells:
+            subtotal = subtotal_by_col.get(tc.col)
+            if subtotal is not None:
+                value = _eval_subtotal(subtotal, ev.group_rows)
+            else:
+                value = _render_cell(tc.template, ctx)
+            style = style_cache.get((srow.template_row, tc.col))
+            if (subtotal is not None or tc.template.is_single_expression) and style is not None:
+                value = _apply_numfmt_coercion(value, style[4])
+            target = _write_cell_value(ws, out_row, tc.col, value)
+            _apply_style(target, style)
+        out_row += 1
+    return out_row
+
+
 def _emit_vertical(
     ws: Any,
     plan: DataRowPlan,
@@ -554,7 +752,7 @@ def _emit_vertical(
             style = style_cache.get((plan.template_row, tc.col))
             if tc.template.is_single_expression and style is not None:
                 value = _apply_numfmt_coercion(value, style[4])
-            target = ws.cell(row=out_row, column=tc.col, value=value)
+            target = _write_cell_value(ws, out_row, tc.col, value)
             _apply_style(target, style)
         out_row += 1
     return out_row
@@ -600,7 +798,7 @@ def _emit_repeat_right(
             new_col = tc.col + col_offset
             # First record reuses the original cell column; subsequent records
             # shift by `col_span` per record.
-            target = ws.cell(row=out_row, column=new_col, value=value)
+            target = _write_cell_value(ws, out_row, new_col, value)
             _apply_style(target, style)
             _ = base_col  # currently unused; kept for future left-anchor needs
     return out_row + 1
@@ -646,12 +844,37 @@ def _build_named_sources_view(sources: dict[str, SourceData]) -> dict[str, dict[
 # ---------------------------------------------------------------------------
 
 
+def _write_cell_value(ws, row, col, value):
+    from openpyxl.cell.cell import TYPE_ERROR
+
+    from .value_model import is_hyperlink_marker, is_xtl_error_cell
+
+    if is_hyperlink_marker(value):
+        cell = ws.cell(
+            row=row,
+            column=col,
+            value=value.get("text") or value.get("__xl3_hyperlink__"),
+        )
+        cell.hyperlink = value["__xl3_hyperlink__"]
+        return cell
+    if is_xtl_error_cell(value):
+        # ADR-0025: write a real Excel error cell (`#DIV/0!` etc.).
+        cell = ws.cell(row=row, column=col, value=value["__xl3_error__"])
+        cell.data_type = TYPE_ERROR
+        return cell
+    return ws.cell(row=row, column=col, value=value)
+
+
 def _apply_numfmt_coercion(value: Any, number_format: str | None) -> Any:
     """ADR-0003: single-expression cells whose template cell has a date /
     number / text format MUST coerce the value to that format. Failures
     raise xl3/cell/numfmt-coercion.
     """
     if value is None or number_format is None:
+        return value
+    from .value_model import is_hyperlink_marker, is_xtl_error_cell
+
+    if is_hyperlink_marker(value) or is_xtl_error_cell(value):
         return value
     nf = number_format
     if nf == "General":
@@ -766,12 +989,22 @@ def _evaluate_filename(
         config_values=config_values,
         active_source_columns=headers,
     )
+    from .expression import BracketRef as _BracketRef
+
     out: list[str] = []
     for seg in tpl.segments:
         if isinstance(seg, TextSegment):
             out.append(seg.text)
         elif isinstance(seg, ExprSegment):
-            out.append(canonical_string(evaluate(seg.expr, ctx)))
+            value = evaluate(seg.expr, ctx)
+            # ADR-0026: a bare-identifier `{{ Col }}` in a filename pattern
+            # is a group-key reference; empty values substitute the
+            # "(blank)" placeholder. `__config__[X]` / `__inputs__[X]` /
+            # `Source[Col]` are NOT group keys and use canonical_string.
+            if isinstance(seg.expr, _BracketRef):
+                out.append(group_key_canonical(value))
+            else:
+                out.append(canonical_string(value))
     return "".join(out)
 
 
@@ -779,15 +1012,19 @@ def _parse_pattern(pattern: str) -> CellTemplate:
     """Parse a filename pattern. Bare identifiers like `{{ Customer }}` are
     treated as group-key references per language.md §"Group Keys".
     """
-    from .expression import (
-        DirectiveSegment as _DS,
-        ExprSegment as _ES,
-        TextSegment as _TS,
-    )
-
     # Reuse the `{{ ... }}` splitter but parse each body with the relaxed
     # filename grammar.
     import re as _re
+
+    from .expression import (
+        DirectiveSegment as _DS,
+    )
+    from .expression import (
+        ExprSegment as _ES,
+    )
+    from .expression import (
+        TextSegment as _TS,
+    )
 
     segs: list[Any] = []
     i = 0

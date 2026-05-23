@@ -17,13 +17,32 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 ---
 
-## Status (2026-05-08)
+## Status (2026-05-23)
 
-All 5 findings below were filed as
-[xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) on 2026-05-08
-and **resolved upstream the same day** in PR #2 (commit `79b08aa`,
-`fix: xl3-py issue #1 batch — '=' operator, U+FEFF whitespace, 1e-6 cutoff`).
-The xl3 spec was subsequently cut as **0.1.0** (release 1.0.0-rc.1 → 0.1.0).
+Synced to **xl3 0.7.0** (ADR-0051..0065 syntactic-conflict batch + ADR-0021
+/ 0041 amendments). Conformance: **133 / 133 stage-1 fixtures passing** (6
+stage-2 skipped — canonical OOXML comparison out of scope for v0.1).
+
+Sync history:
+
+| Sync | xl3 release | Conformance result |
+|---|---|---|
+| 0.1.0a0 / 0a1 / 0a2 | 0.1.0 (foundation) | 91 / 91 — xl3 issue #1 batch resolved |
+| _no port release_ | 0.4 / 0.5 / 0.6 | corpus grew to 133 fixtures; previous port lagged |
+| **0.1.0a3** | **0.7.0** | **133 / 133** — full backlog closed in one batch |
+
+The 0.1.0a3 sync (this file's most recent batch) covered both the new
+0.7.0 normative shape (ADR-0051..0065 + amendments) and twelve pre-0.7
+fixture failures that had accumulated since 0.5: native-formula static
+preservation (097), empty template block (099), operator coercion
+(100/101), division-by-zero error cell (106), `(blank)` group-key
+placeholder for file/sheet partitioning (107/108), source reserved
+column names (109), generic `Invalid directive` error wrapper
+(110/111), unsupported unary on non-numeric (113), duplicate `@source`
+(114), self-join rejection (115), and output filename collision (119).
+
+All five port-side findings below remain historical; they were
+upstreamed in xl3 0.1.0 and stayed fixed across every subsequent batch.
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -33,7 +52,6 @@ The xl3 spec was subsequently cut as **0.1.0** (release 1.0.0-rc.1 → 0.1.0).
 | #4 | Naive datetime / UTC | **DOCUMENTED** — same section |
 | #5 | TS IF normalizer omits `=` | **FIXED** — `normalizer.ts` op list adds `['=', 'eq']`; fixture 048 expected re-authored |
 
-The Python port now passes **91 / 91 stage-1 fixtures (5 stage-2 skipped)**.
 Entries below are kept for historical record.
 
 ---

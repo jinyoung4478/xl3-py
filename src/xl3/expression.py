@@ -23,7 +23,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Union
 
-
 # ---------------------------------------------------------------------------
 # AST nodes
 # ---------------------------------------------------------------------------
@@ -68,19 +67,19 @@ class FuncCall:
     """A function call. `name` is upper-cased on parse for case-insensitivity."""
 
     name: str
-    args: list["Expr"]
+    args: list[Expr]
 
 
 @dataclass
 class BinOp:
     op: str  # one of: & + - * / = != > < >= <=
-    left: "Expr"
-    right: "Expr"
+    left: Expr
+    right: Expr
 
 
 @dataclass
 class UnaryNeg:
-    operand: "Expr"
+    operand: Expr
 
 
 Expr = Union[
@@ -262,6 +261,20 @@ class _Parser:
         t = self.peek()
         if t and t.kind == "OP" and t.value == "-":
             self.eat()
+            # ADR-0028: only literal-numeric unary is supported (`-5`). A
+            # unary `-` applied to `[Column]`, source refs, function calls,
+            # or sub-expressions raises xl3/eval/unsupported-syntax.
+            # Authors must write `(0 - <expr>)` explicitly.
+            nxt = self.peek()
+            if nxt is None or nxt.kind != "NUM":
+                from .errors import xtl_error
+
+                raise xtl_error(
+                    "xl3/eval/unsupported-syntax",
+                    "Unsupported expression: unary operators on columns or "
+                    "sub-expressions are not supported in XTL 0.x; "
+                    "use (0 - <expr>) for negation.",
+                )
             return UnaryNeg(self._parse_unary())
         return self._parse_primary()
 
@@ -400,15 +413,38 @@ def parse_cell_template(text: str) -> CellTemplate:
     the caller). Returns a CellTemplate; cells without `{{ }}` produce a
     single TextSegment. A `{{ @... }}` body becomes a DirectiveSegment.
     """
+    # ADR-0052: trim the cell text before splitting so a cell like
+    # `  {{ [Amount] }}  ` classifies as a single-expression cell and
+    # gets numFmt coercion (rather than being silently mixed-text).
+    text = text.strip() if text else text
     segs: list[CellSegment] = []
     i = 0
     for m in _EXPR_RE.finditer(text):
         if m.start() > i:
             segs.append(TextSegment(text[i : m.start()]))
         body = m.group(1)
+        # ADR-0051: the first `}}` closes the block. If the body contains
+        # an unbalanced string literal (odd number of `"` characters),
+        # raise xl3/parser/unbalanced-literal before continuing.
+        if body.count('"') % 2 != 0:
+            from .errors import xtl_error
+
+            raise xtl_error(
+                "xl3/parser/unbalanced-literal",
+                f"Unbalanced string literal in template block: {{{{ {body} }}}}",
+            )
         if body.lstrip().startswith("@"):
             segs.append(DirectiveSegment(body=body))
         else:
+            # ADR-0021: an empty `{{ }}` (or whitespace-only) is a parser
+            # error, not silently accepted.
+            if body.strip() == "":
+                from .errors import xtl_error
+
+                raise xtl_error(
+                    "xl3/parser/empty-block",
+                    "Empty template block: {{ ... }} must contain an expression",
+                )
             try:
                 expr = parse_expression(body)
             except ExpressionParseError as e:

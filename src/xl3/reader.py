@@ -173,7 +173,7 @@ def read_all_sources(
     default_sheet: str | None,
     default_table: str,
     declared_sources: list[Any],
-) -> dict[str, "SourceData"]:
+) -> dict[str, SourceData]:
     """Read the default source plus every entry in `__sources__`.
 
     Returns a dict keyed by source name; the implicit default source is
@@ -277,7 +277,7 @@ def _read_with_inferred_span(
 def _read_with_explicit_range(
     ws: Any,
     sheet_name: str,
-    rng: "_RangeSelector",
+    rng: _RangeSelector,
     formula_view: _FormulaView | None,
 ) -> SourceData:
     headers, col_indices = _read_header_row(
@@ -342,6 +342,16 @@ def _read_header_row(
                 "xl3/source/duplicate-name",
                 f'source_table has duplicate header "{name}"',
             )
+        # ADR-0027: source columns whose header collides with an xl3-internal
+        # context key are rejected at parse so authors see the conflict
+        # immediately. Anything matching `__<lowercase>__` is reserved.
+        if name in _RESERVED_COLUMN_NAMES or _DUNDER_NAME_RE.match(name):
+            raise xtl_error(
+                "xl3/source/reserved-column-name",
+                f'source_table column "{name}" uses a reserved internal name; '
+                "rename it (reserved: Rows, __rownum, __activeSource__, "
+                "__joinedRow__, anything matching __<lowercase>__)",
+            )
         seen.add(name)
         headers.append(name)
         col_indices.append(col_idx)
@@ -359,18 +369,35 @@ def _header_cell_text_with_merges(ws: Any, row: int, col: int) -> str | None:
     return _header_cell_text(cell)
 
 
+# ADR-0027: column names that collide with xl3-internal context keys are
+# rejected at parse so authors see the conflict immediately rather than
+# debugging a `[object Object]` cell value later.
+_RESERVED_COLUMN_NAMES: frozenset[str] = frozenset(
+    {"Rows", "__rownum", "__activeSource__", "__joinedRow__"}
+)
+_DUNDER_NAME_RE = re.compile(r"^__[a-z]+__$")
+
+# ADR-0041 amendment: header cells normalize CRLF/CR/LF to a single space at
+# read time. Data cells preserve LF verbatim.
+_HEADER_NEWLINE_RE = re.compile(r"\r\n|\r|\n")
+
+
 def _header_cell_text(cell: Cell) -> str | None:
     v = cell.value
     if v is None:
         return ""
     if isinstance(v, CellRichText):
-        return "".join(str(part) for part in v)
-    if isinstance(v, str) and v.startswith("="):
+        text = "".join(str(part) for part in v)
+    elif isinstance(v, str) and v.startswith("="):
         raise xtl_error(
             "xl3/cell/formula-no-cache",
             f"Formula cell {cell.coordinate} has no cached result",
         )
-    return str(v)
+    else:
+        text = str(v)
+    # ADR-0041 amendment: collapse CR / LF / CRLF to a single space in
+    # header text. Data cells use a different read path that preserves LF.
+    return _HEADER_NEWLINE_RE.sub(" ", text)
 
 
 def _read_data_rows(
