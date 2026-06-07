@@ -1,13 +1,13 @@
 {
   "implementation": "xl3-py",
-  "version": "0.1.0a4",
+  "version": "0.1.0a5",
   "spec_version": "0.1",
   "comparison_stage": 1,
   "results": [
     {
       "fixture": "001-bracket-substitution",
       "status": "pass",
-      "duration_ms": 15
+      "duration_ms": 14
     },
     {
       "fixture": "002-if-function",
@@ -17,12 +17,12 @@
     {
       "fixture": "003-list-sheet-filter",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "004-repeat-right-default",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "005-round-half-away-from-zero",
@@ -32,7 +32,7 @@
     {
       "fixture": "006-filename-forbidden-chars",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "007-filename-reserved-name",
@@ -42,52 +42,52 @@
     {
       "fixture": "008-numfmt-numeric-string-coercion",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "009-numfmt-date-string-coercion",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "010-numfmt-text-format-coercion",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "011-text-date-format",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "012-text-number-format",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "013-rich-text-template-expression",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "014-source-formula-cached-result",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "015-source-sheet-prefix-first-match",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "016-text-number-negative-rounding",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "017-source-sheet-prefix-no-match-error",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 2
     },
     {
       "fixture": "018-source-formula-missing-cached-result-error",
@@ -97,12 +97,12 @@
     {
       "fixture": "019-filename-empty-basename-error",
       "status": "pass",
-      "duration_ms": 9
+      "duration_ms": 7
     },
     {
       "fixture": "020-filename-length-overflow-error",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "021-numfmt-number-coercion-error",
@@ -112,12 +112,12 @@
     {
       "fixture": "022-numfmt-date-coercion-error",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 3
     },
     {
       "fixture": "023-today-utc-dynamic",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "024-stage2-merge-preservation",
@@ -197,7 +197,7 @@
     {
       "fixture": "039-source-sheet-default-first-worksheet",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "040-list-sheet-hidden-states-removed",
@@ -217,22 +217,22 @@
     {
       "fixture": "043-ifempty-function",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "044-sort-and-top-order",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "045-list-sheet-not-in-filter",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "046-count-field-non-empty",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "047-aggregate-functions",
@@ -272,7 +272,7 @@
     {
       "fixture": "054-empty-list-membership",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "055-if-truthy-zero-and-empty",
@@ -282,17 +282,17 @@
     {
       "fixture": "056-if-truthy-string-zero-not-special",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "057-if-truthy-boolean",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "058-if-comparison-result",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "059-compare-numeric-string-vs-number",
@@ -302,7 +302,7 @@
     {
       "fixture": "060-compare-string-codepoint-order",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "061-concat-canonical-form",
@@ -312,17 +312,17 @@
     {
       "fixture": "062-concat-empty-stringifies-to-empty",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "063-compare-empty-vs-value",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "064-compare-unicode-minus-not-numeric",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "065-input-text-default-applied",
@@ -342,12 +342,12 @@
     {
       "fixture": "068-input-select-host-supplied",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "069-source-multi-declaration",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "070-source-aggregate-cross-source",
@@ -362,7 +362,7 @@
     {
       "fixture": "072-source-undeclared-error",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 3
     },
     {
       "fixture": "073-source-row-cross-error",
@@ -377,7 +377,7 @@
     {
       "fixture": "075-xlookup-fallback",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 8
     },
     {
       "fixture": "076-xlookup-no-match-error",
@@ -397,7 +397,7 @@
     {
       "fixture": "079-join-basic-inner",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "080-join-no-match-dropped",
@@ -407,7 +407,7 @@
     {
       "fixture": "081-join-undeclared-source-error",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 3
     },
     {
       "fixture": "082-join-bad-on-clause-error",
@@ -437,12 +437,12 @@
     {
       "fixture": "087-date-canonical-string-concat",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "088-date-comparison-equality",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "089-error-sentinel-empty",
@@ -452,7 +452,7 @@
     {
       "fixture": "090-percentage-numeric-flow",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "091-source-unknown-column-error",
@@ -507,7 +507,7 @@
     {
       "fixture": "102-function-arity-round-missing-arg",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 3
     },
     {
       "fixture": "103-function-arity-xlookup-too-few-args",
@@ -527,12 +527,12 @@
     {
       "fixture": "106-division-by-zero-produces-error-cell",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "107-group-key-empty-blank-placeholder-file",
       "status": "pass",
-      "duration_ms": 10
+      "duration_ms": 8
     },
     {
       "fixture": "108-group-key-empty-blank-placeholder-sheet",
@@ -547,17 +547,17 @@
     {
       "fixture": "110-directive-empty-filter-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "111-directive-empty-source-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "112-literal-signed-number",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "113-unsupported-unary-on-column-ref-error",
@@ -592,7 +592,7 @@
     {
       "fixture": "119-output-filename-collision-error",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 6
     },
     {
       "fixture": "120-workbook-properties-preserved",
@@ -622,7 +622,7 @@
     {
       "fixture": "125-hyperlink-function",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "126-date-arithmetic-functions",
@@ -632,17 +632,17 @@
     {
       "fixture": "127-multiline-cell-text",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "128-function-batch-0044",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 5
     },
     {
       "fixture": "129-cell-formula-preservation",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "130-isblank-function",
@@ -652,7 +652,7 @@
     {
       "fixture": "131-inputs-with-xtl-default",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "132-group-single-level-subtotal",
@@ -672,7 +672,7 @@
     {
       "fixture": "135-group-filter-composition",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "136-group-missing-key",
@@ -702,22 +702,22 @@
     {
       "fixture": "141-block-column-scoped-side-cells",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 9
     },
     {
       "fixture": "142-block-column-scoped-side-formulas",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "143-block-shared-formula-side-cells",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "144-block-side-cells-after-block",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "145-block-bracket-outside-error",
@@ -737,17 +737,17 @@
     {
       "fixture": "148-multi-block-different-start-rows",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 6
     },
     {
       "fixture": "149-block-col-range-explicit",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "150-block-full-rect-explicit",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "151-block-overlap-error",

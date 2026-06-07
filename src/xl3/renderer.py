@@ -48,6 +48,7 @@ from .parser import (
     SheetTemplate,
     StaticRowPlan,
     SubtotalCell,
+    TemplateCell,
     is_reserved_sheet,
 )
 from .reader import SourceData
@@ -467,7 +468,7 @@ def _emit_outside_cells(
         active_row_set=list(default_source.rows) if default_source else None,
     )
     for oc in outside_cells:
-        value = _render_cell(oc.cell.template, ctx)
+        value = _render_cell(oc.cell, ctx)
         style = style_cache.get((oc.row, oc.col))
         if oc.cell.template.is_single_expression and style is not None:
             value = _apply_numfmt_coercion(value, style[4])
@@ -507,7 +508,7 @@ def _emit_static(
         active_row_set=list(default_source.rows) if default_source else None,
     )
     for tc in plan.cells:
-        value = _render_cell(tc.template, ctx)
+        value = _render_cell(tc, ctx)
         style = style_cache.get((plan.template_row, tc.col))
         if tc.template.is_single_expression and style is not None:
             value = _apply_numfmt_coercion(value, style[4])
@@ -758,7 +759,7 @@ def _emit_grouped_block(
                 rows,
             )
             for tc in plan.cells:
-                value = _render_cell(tc.template, ctx)
+                value = _render_cell(tc, ctx)
                 style = style_cache.get((plan.template_row, tc.col))
                 if tc.template.is_single_expression and style is not None:
                     value = _apply_numfmt_coercion(value, style[4])
@@ -787,7 +788,7 @@ def _emit_grouped_block(
             if subtotal is not None:
                 value = _eval_subtotal(subtotal, ev.group_rows)
             else:
-                value = _render_cell(tc.template, ctx)
+                value = _render_cell(tc, ctx)
             style = style_cache.get((srow.template_row, tc.col))
             if (subtotal is not None or tc.template.is_single_expression) and style is not None:
                 value = _apply_numfmt_coercion(value, style[4])
@@ -825,7 +826,7 @@ def _emit_vertical(
             rows,
         )
         for tc in plan.cells:
-            value = _render_cell(tc.template, ctx)
+            value = _render_cell(tc, ctx)
             style = style_cache.get((plan.template_row, tc.col))
             if tc.template.is_single_expression and style is not None:
                 value = _apply_numfmt_coercion(value, style[4])
@@ -868,7 +869,7 @@ def _emit_repeat_right(
         )
         col_offset = i * col_span
         for tc in plan.cells:
-            value = _render_cell(tc.template, ctx)
+            value = _render_cell(tc, ctx)
             style = style_cache.get((plan.template_row, tc.col))
             if tc.template.is_single_expression and style is not None:
                 value = _apply_numfmt_coercion(value, style[4])
@@ -1021,8 +1022,14 @@ def _coerce_to_date_for_numfmt(value: Any, nf: str) -> Any:
     )
 
 
-def _render_cell(tpl: CellTemplate, ctx: EvalContext) -> Any:
+def _render_cell(tc: TemplateCell, ctx: EvalContext) -> Any:
+    tpl = tc.template
     if tpl.is_pure_text:
+        # xl3 0.8.1 sync: pure-text cells re-emit the template's NATIVE
+        # value (number/date/boolean) verbatim — re-rendering from the
+        # cell's text form would stringify it (5500 → "5500").
+        if tc.native_value is not None:
+            return tc.native_value
         seg = tpl.segments[0]
         assert isinstance(seg, TextSegment)
         return seg.text if seg.text != "" else None
