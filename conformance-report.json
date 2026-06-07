@@ -7,7 +7,7 @@
     {
       "fixture": "001-bracket-substitution",
       "status": "pass",
-      "duration_ms": 14
+      "duration_ms": 15
     },
     {
       "fixture": "002-if-function",
@@ -17,27 +17,27 @@
     {
       "fixture": "003-list-sheet-filter",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "004-repeat-right-default",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "005-round-half-away-from-zero",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "006-filename-forbidden-chars",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "007-filename-reserved-name",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "008-numfmt-numeric-string-coercion",
@@ -47,7 +47,7 @@
     {
       "fixture": "009-numfmt-date-string-coercion",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "010-numfmt-text-format-coercion",
@@ -62,12 +62,12 @@
     {
       "fixture": "012-text-number-format",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "013-rich-text-template-expression",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "014-source-formula-cached-result",
@@ -77,12 +77,12 @@
     {
       "fixture": "015-source-sheet-prefix-first-match",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 6
     },
     {
       "fixture": "016-text-number-negative-rounding",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "017-source-sheet-prefix-no-match-error",
@@ -97,12 +97,12 @@
     {
       "fixture": "019-filename-empty-basename-error",
       "status": "pass",
-      "duration_ms": 7
+      "duration_ms": 8
     },
     {
       "fixture": "020-filename-length-overflow-error",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "021-numfmt-number-coercion-error",
@@ -117,7 +117,7 @@
     {
       "fixture": "023-today-utc-dynamic",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "024-stage2-merge-preservation",
@@ -182,7 +182,7 @@
     {
       "fixture": "036-source-table-formula-header",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "037-source-table-formula-header-missing-cache-error",
@@ -207,7 +207,7 @@
     {
       "fixture": "041-row-function-inside-repeat-block",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "042-row-function-outside-repeat-block-error",
@@ -232,7 +232,7 @@
     {
       "fixture": "046-count-field-non-empty",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "047-aggregate-functions",
@@ -272,7 +272,7 @@
     {
       "fixture": "054-empty-list-membership",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "055-if-truthy-zero-and-empty",
@@ -282,17 +282,17 @@
     {
       "fixture": "056-if-truthy-string-zero-not-special",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "057-if-truthy-boolean",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "058-if-comparison-result",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "059-compare-numeric-string-vs-number",
@@ -302,27 +302,27 @@
     {
       "fixture": "060-compare-string-codepoint-order",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "061-concat-canonical-form",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "062-concat-empty-stringifies-to-empty",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "063-compare-empty-vs-value",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "064-compare-unicode-minus-not-numeric",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "065-input-text-default-applied",
@@ -352,12 +352,12 @@
     {
       "fixture": "070-source-aggregate-cross-source",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "071-source-directive-active",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "072-source-undeclared-error",
@@ -377,7 +377,7 @@
     {
       "fixture": "075-xlookup-fallback",
       "status": "pass",
-      "duration_ms": 8
+      "duration_ms": 6
     },
     {
       "fixture": "076-xlookup-no-match-error",
@@ -392,7 +392,7 @@
     {
       "fixture": "078-xlookup-bare-bracket-error",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "079-join-basic-inner",
@@ -407,7 +407,7 @@
     {
       "fixture": "081-join-undeclared-source-error",
       "status": "pass",
-      "duration_ms": 3
+      "duration_ms": 6
     },
     {
       "fixture": "082-join-bad-on-clause-error",
@@ -437,7 +437,7 @@
     {
       "fixture": "087-date-canonical-string-concat",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "088-date-comparison-equality",
@@ -452,7 +452,7 @@
     {
       "fixture": "090-percentage-numeric-flow",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "091-source-unknown-column-error",
@@ -482,7 +482,7 @@
     {
       "fixture": "096-canonical-number-scientific-boundary",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 4
     },
     {
       "fixture": "097-native-formula-static-cell-preserved",
@@ -492,7 +492,7 @@
     {
       "fixture": "099-empty-template-block-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "100-arithmetic-string-coerces-to-number",
@@ -527,17 +527,17 @@
     {
       "fixture": "106-division-by-zero-produces-error-cell",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "107-group-key-empty-blank-placeholder-file",
       "status": "pass",
-      "duration_ms": 8
+      "duration_ms": 9
     },
     {
       "fixture": "108-group-key-empty-blank-placeholder-sheet",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "109-source-column-reserved-name-error",
@@ -547,22 +547,22 @@
     {
       "fixture": "110-directive-empty-filter-error",
       "status": "pass",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "fixture": "111-directive-empty-source-error",
       "status": "pass",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "fixture": "112-literal-signed-number",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 7
     },
     {
       "fixture": "113-unsupported-unary-on-column-ref-error",
       "status": "pass",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "fixture": "114-duplicate-source-directive-error",
@@ -582,7 +582,7 @@
     {
       "fixture": "117-hidden-source-rows-included",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "118-unicode-normalization-not-applied",
@@ -592,7 +592,7 @@
     {
       "fixture": "119-output-filename-collision-error",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 7
     },
     {
       "fixture": "120-workbook-properties-preserved",
@@ -602,7 +602,7 @@
     {
       "fixture": "121-source-merged-header",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "122-source-data-row-merge-broadcast",
@@ -612,17 +612,17 @@
     {
       "fixture": "123-feature-preservation",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "124-source-2d-merge-header",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "125-hyperlink-function",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "126-date-arithmetic-functions",
@@ -632,12 +632,12 @@
     {
       "fixture": "127-multiline-cell-text",
       "status": "pass",
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "fixture": "128-function-batch-0044",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "129-cell-formula-preservation",
@@ -702,7 +702,7 @@
     {
       "fixture": "141-block-column-scoped-side-cells",
       "status": "pass",
-      "duration_ms": 9
+      "duration_ms": 6
     },
     {
       "fixture": "142-block-column-scoped-side-formulas",
@@ -717,12 +717,12 @@
     {
       "fixture": "144-block-side-cells-after-block",
       "status": "pass",
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "fixture": "145-block-bracket-outside-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "146-multi-block-explicit-two-tables",
@@ -752,7 +752,7 @@
     {
       "fixture": "151-block-overlap-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "152-block-empty-table-error",
@@ -762,22 +762,27 @@
     {
       "fixture": "153-directive-orphan-error",
       "status": "pass",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "fixture": "154-multi-block-per-block-filter",
       "status": "pass",
-      "duration_ms": 6
+      "duration_ms": 5
     },
     {
       "fixture": "155-multi-block-row-function-scope",
+      "status": "pass",
+      "duration_ms": 5
+    },
+    {
+      "fixture": "156-static-native-value-preservation",
       "status": "pass",
       "duration_ms": 6
     }
   ],
   "summary": {
-    "total": 148,
-    "passed": 148,
+    "total": 149,
+    "passed": 149,
     "failed": 0,
     "skipped": 6
   }

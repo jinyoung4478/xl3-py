@@ -21,8 +21,11 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 Synced to **xl3 0.8.1** (ADR-0066 outside-block ghost-style fix — N/A to
 this port's compose model, see the 0.1.0a5 sync notes). Conformance:
-**148 / 148 stage-1 fixtures passing** (6 stage-2 skipped — canonical
-OOXML comparison out of scope for v0.1).
+**149 / 149 stage-1 fixtures passing** (6 stage-2 skipped — canonical
+OOXML comparison out of scope for v0.1). The 149th is fixture 156
+(native static/outside value preservation), added upstream from this
+port's proposal (xl3 issue #49) and passing thanks to the 0.1.0a5
+native-value fix.
 
 Sync history:
 
@@ -71,9 +74,12 @@ ghost copy of the side summary block below the data.
   str↔number, so a fixture would catch it; worth proposing one
   upstream.
 
-The conformance corpus is unchanged at 0.8.1 (stage-1 compares cell
-values; the ghost lives at the style layer). 148 / 148 still passing
-after the native-value fix.
+The conformance corpus was unchanged at the 0.8.1 cut (stage-1 compares
+cell values; the ghost lives at the style layer); 148 / 148 passed at
+sync time. The native-value finding was proposed upstream (xl3 issue
+#49) and accepted as fixture `156-static-native-value-preservation` —
+the corpus is now 149 stage-1 fixtures and this port passes all of
+them.
 
 ### 0.1.0a4 sync notes (xl3 0.8.0 absorption)
 
