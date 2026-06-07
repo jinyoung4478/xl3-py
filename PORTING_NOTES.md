@@ -17,12 +17,12 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 ---
 
-## Status (2026-05-24)
+## Status (2026-06-07)
 
-Synced to **xl3 0.8.0** (ADRs 0066–0069 — column-scoped data block, `@block`
-directive, multi-block detection + per-block directive scoping; plus the
-issue #46 / #47 fixes). Conformance: **148 / 148 stage-1 fixtures passing**
-(6 stage-2 skipped — canonical OOXML comparison out of scope for v0.1).
+Synced to **xl3 0.8.1** (ADR-0066 outside-block ghost-style fix — N/A to
+this port's compose model, see the 0.1.0a5 sync notes). Conformance:
+**148 / 148 stage-1 fixtures passing** (6 stage-2 skipped — canonical
+OOXML comparison out of scope for v0.1).
 
 Sync history:
 
@@ -31,7 +31,49 @@ Sync history:
 | 0.1.0a0 / 0a1 / 0a2 | 0.1.0 (foundation) | 91 / 91 — xl3 issue #1 batch resolved |
 | _no port release_ | 0.4 / 0.5 / 0.6 | corpus grew to 133 fixtures; previous port lagged |
 | 0.1.0a3 | 0.7.0 | 133 / 133 — full backlog closed in one batch |
-| **0.1.0a4** | **0.8.0** | **148 / 148** — column-scoped block + multi-block (ADRs 0066–0069) |
+| 0.1.0a4 | 0.8.0 | 148 / 148 — column-scoped block + multi-block (ADRs 0066–0069) |
+| **0.1.0a5** | **0.8.1** | **148 / 148** — corpus unchanged; ghost-style fix N/A (compose model) + native static value fix |
+
+### 0.1.0a5 sync notes (xl3 0.8.1 absorption)
+
+xl3 0.8.1 is a single renderer fix (commit `174bba1`): the ADR-0066
+restore pass moved outside-block cells back to their original rows after
+the expansion splice but cleared only the **value** at the shifted
+position — borders/fills stayed behind, rendering an empty fully-bordered
+ghost copy of the side summary block below the data.
+
+- **Audit result: NOT AFFECTED.** The bug is specific to the JS engine's
+  splice+restore strategy. This port composes rows in place via an
+  `out_row` cursor (`_render_sheet` clears values in the template row
+  range, the plan walk re-emits every cell with its cached style, and
+  `_emit_outside_cells` re-emits outside cells at their original
+  coordinates AFTER the main plan) — there is no shifted position to
+  leak style from. Same reason the upstream wasm core was never
+  affected ("composes rows instead of splice+restore", per the
+  upstream commit message).
+- **Regression tests ported anyway.** Upstream added
+  `renderer-outside-block-ghost-style.test.ts` with a property-based
+  assertion — *no cell in the side columns may carry ink (border/fill)
+  without a value*. Ported to
+  `tests/unit/test_renderer_outside_block_ghost_style.py` covering both
+  the plain and `@group`/`@subtotal` render paths, guarding the
+  invariant against a future change of emission strategy.
+- **Port-side finding fixed: native static values stringified.** The
+  ported test exposed a real fidelity divergence unique to the compose
+  model: re-rendering every cell from its TEXT template turned native
+  numbers/dates/booleans in static and outside cells into strings
+  (`5500` → `"5500"`). The TS splice model never rewrites static cells,
+  so natives survive there. Fix: `TemplateCell` carries a
+  `native_value` (captured at parse when the cell holds a non-string),
+  and `_render_cell` returns it verbatim for pure-text cells.
+  Invisible to stage-1 conformance only because no fixture pins a bare
+  numeric static cell — the runner's `_values_equal` does NOT coerce
+  str↔number, so a fixture would catch it; worth proposing one
+  upstream.
+
+The conformance corpus is unchanged at 0.8.1 (stage-1 compares cell
+values; the ghost lives at the style layer). 148 / 148 still passing
+after the native-value fix.
 
 ### 0.1.0a4 sync notes (xl3 0.8.0 absorption)
 

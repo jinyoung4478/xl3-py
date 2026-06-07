@@ -81,6 +81,12 @@ class TemplateCell:
     has_per_row_ref: bool = False
     has_data_marker: bool = False  # ADR-0066: truly-bracketed [col] ref present?
     raw_text: str = ""
+    # xl3 0.8.1 sync: the cell's NATIVE value (number/date/boolean) when the
+    # template cell holds a non-string. The TS splice model never rewrites
+    # static cells so natives survive there; the compose model re-renders
+    # every cell from text and must carry the native through explicitly —
+    # otherwise `5500` re-emits as the string "5500".
+    native_value: Any = None
 
     @property
     def has_data_refs(self) -> bool:
@@ -1020,6 +1026,11 @@ def _parse_sheet_template(ws: Any) -> SheetTemplate:
                 has_per_row_ref=has_per_row,
                 has_data_marker=has_data_marker,
                 raw_text=text,
+                native_value=(
+                    cell.value
+                    if not isinstance(cell.value, (str, CellRichText))
+                    else None
+                ),
             )
             rows_cells.setdefault(cell.row, []).append(tc)
             st.max_col = max(st.max_col, cell.column)
