@@ -17,15 +17,12 @@ When this file accumulates 5+ entries, batch them into an issue against
 
 ---
 
-## Status (2026-06-07)
+## Status (2026-07-17)
 
-Synced to **xl3 0.8.1** (ADR-0066 outside-block ghost-style fix — N/A to
-this port's compose model, see the 0.1.0a5 sync notes). Conformance:
-**149 / 149 stage-1 fixtures passing** (6 stage-2 skipped — canonical
-OOXML comparison out of scope for v0.1). The 149th is fixture 156
-(native static/outside value preservation), added upstream from this
-port's proposal (xl3 issue #49) and passing thanks to the 0.1.0a5
-native-value fix.
+Synced to **xl3 0.9.0** plus current upstream main at `c8902a1`
+(ADR-0073 / issue #66, fixtures 159-160). Conformance:
+**153 / 153 stage-1 fixtures passing** (6 stage-2 skipped — canonical
+OOXML comparison out of scope for v0.1).
 
 Sync history:
 
@@ -35,7 +32,42 @@ Sync history:
 | _no port release_ | 0.4 / 0.5 / 0.6 | corpus grew to 133 fixtures; previous port lagged |
 | 0.1.0a3 | 0.7.0 | 133 / 133 — full backlog closed in one batch |
 | 0.1.0a4 | 0.8.0 | 148 / 148 — column-scoped block + multi-block (ADRs 0066–0069) |
-| **0.1.0a5** | **0.8.1** | **148 / 148** — corpus unchanged; ghost-style fix N/A (compose model) + native static value fix |
+| 0.1.0a5 | 0.8.1 | 149 / 149 — ghost-style fix N/A (compose model) + native static value fix |
+| **0.1.0a6** | **0.9.0 + main ADR-0073** | **153 / 153** — grouped side cells, chained arithmetic, subtotal mixed-row, formula-cache marker guard |
+
+### 0.1.0a6 sync notes (xl3 0.9.0 + ADR-0073 main absorption)
+
+The upstream npm release is 0.9.0, but local `../xl3` main also includes
+the unreleased ADR-0073 fix set (`c8902a1`, issue #66). This sync targets
+that local main rather than stopping at the npm cut.
+
+- **0.9.0 conformance fixtures.** Fixture 156 was already covered by the
+  0.1.0a5 native-value fix. Fixture 157 exposed one compose-model gap:
+  outside-block cells beside grouped `@subtotal` blocks must land at
+  their **post-directive-removal** row, not the raw template row. The
+  renderer now subtracts stripped directive rows for outside-cell target
+  coordinates, while excluding subtotal rows because they are emitted at
+  group boundaries, not simply removed. The old source coordinate is also
+  style-cleared when the cell moves so side-summary borders/fills do not
+  leave a style-only ghost. Fixture 158 already passed because the Python
+  recursive-descent expression parser folds same-precedence arithmetic
+  left-to-right.
+- **ADR-0073 `@subtotal` mixed-row error.** `_classify_cells` now rejects
+  rows that contain both an `@subtotal` cell and an aggregate-external
+  current-row marker with `xl3/subtotal/mixed-row`. String literals that
+  merely contain bracket-looking text still parse as literals and remain
+  legal.
+- **Formula cached results are not marker text.** Template parsing now
+  loads a formula view alongside the data-only workbook. Formula cells
+  are treated as non-empty for block geometry, but their cached `<v>`
+  result is not scanned for `{{ ... }}` markers or directives. For
+  openpyxl Stage-1 compatibility, non-marker cached formula values are
+  still carried as inert native values because openpyxl cannot round-trip
+  formula caches when saving; marker-looking caches preserve the formula
+  string instead so fixture 160 cannot self-corrupt.
+- **Runner YAML tolerance.** Fixture 160's `meta.yaml` contains a long
+  plain-scalar description with `: `. The lenient loader now quotes that
+  prose form in addition to the older backtick/`@` reserved-leading cases.
 
 ### 0.1.0a5 sync notes (xl3 0.8.1 absorption)
 

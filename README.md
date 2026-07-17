@@ -10,14 +10,28 @@ produce identical output for the same conformance corpus, the spec is real.
 
 - **Spec & TS reference**: <https://github.com/jinyoung4478/xl3>
   (XTL spec **0.1.0** released 2026-05-08; spec corpus currently at
-  xl3 **0.8.0**).
-- **Conformance status (xl3 0.8.0 corpus)**: **148 / 148 stage-1 fixtures
-  passing (100%)** — 6 stage-2 fixtures skipped (canonical OOXML comparison
-  out of scope for v0.1).
+  xl3 **0.9.0** plus current main ADR-0073 fixtures).
+- **Conformance status (latest local xl3 corpus, through fixture 160)**:
+  **153 / 153 stage-1 fixtures passing (100%)** — 6 stage-2 fixtures
+  skipped (canonical OOXML comparison out of scope for v0.1).
   The 5 spec/impl ambiguities found while building this port were filed as
   [xl3 issue #1](https://github.com/jinyoung4478/xl3/issues/1) and resolved
   upstream the same day; see `PORTING_NOTES.md` for the full sync log
-  (0.5 → 0.6 → 0.7 → 0.8).
+  (0.5 → 0.6 → 0.7 → 0.8 → 0.9 → ADR-0073).
+
+### Sync to xl3 0.9.0 + ADR-0073 main (`0.1.0a6`, 2026-07-17)
+
+Absorbs the 0.9.0 conformance additions plus the current upstream main
+fixes for issue #66 / ADR-0073:
+
+- Fixtures 157 / 159 / 160 are now green: grouped outside-block side cells
+  land at post-directive-removal rows, `@subtotal` rows with per-row
+  `[Column]` references raise `xl3/subtotal/mixed-row`, and formula cached
+  results are no longer parsed as template markers.
+- Fixture 158 (left-associative chained arithmetic) already matched the
+  current recursive-descent parser and remains green.
+- The conformance runner now tolerates latest fixture prose that PyYAML
+  rejects as a bare scalar.
 
 ### Sync to xl3 0.8.0 (`0.1.0a4`, 2026-05-23)
 
@@ -139,11 +153,11 @@ python -m xl3.runner --id-prefix 050
 Output sample:
 
 ```
-xl3-py 0.1.0a4 — XTL 0.1 (stage 1)
+xl3-py 0.1.0a6 — XTL 0.1 (stage 1)
   pass   001-bracket-substitution
   pass   002-if-function
   ...
-summary: 148/148 passed, 0 failed, 6 skipped
+summary: 153/153 passed, 0 failed, 6 skipped
 ```
 
 ## What is supported
@@ -156,11 +170,12 @@ summary: 148/148 passed, 0 failed, 6 skipped
 | `XLOOKUP` (3-arg + 4-arg) | ✅ |
 | Directives `@filter` / `@sort` / `@top` / `@repeat right` / `@source` / `@join` / `@group` / `@subtotal` / `@block` | ✅ |
 | `__config__` / `__inputs__` / `__sources__` / `__lists__` reserved sheets | ✅ |
-| ADR-0007 / 0008 / 0009 / 0017 value model | ✅ (83 unit tests pinning the contract) |
+| ADR-0007 / 0008 / 0009 / 0017 value model | ✅ (85 unit tests pinning the contract) |
 | ADR-0033 / 0035 merged-cell headers + master-broadcast (xl3 0.5/0.6) | ✅ |
 | ADR-0038 `@group` / `@subtotal` (xl3 0.6) | ✅ |
 | ADR-0051..0065 syntactic-conflict batch (xl3 0.7) | ✅ |
 | ADR-0066..0069 column-scoped data block + `@block` + multi-block (xl3 0.8) | ✅ |
+| ADR-0073 `@subtotal` mixed-row + formula-cache marker guard | ✅ |
 | ADR-0002 filename sanitization | ✅ |
 | ADR-0003 numFmt-driven coercion | ✅ |
 | ADR-0010 runtime inputs (text / number / date / select) | ✅ |

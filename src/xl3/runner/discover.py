@@ -19,12 +19,10 @@ import yaml
 
 
 def _lenient_yaml_load(text: str) -> Any:
-    """yaml.safe_load with a recovery pass for values that begin with a
-    YAML "reserved" indicator (``` ` ```, ``@``). PyYAML rejects such
-    bare scalars; xl3 fixtures sometimes start ``description:`` with
-    a backtick-wrapped term — pre-quote those lines and retry. Other
-    YAML libraries (js-yaml, ruamel) accept them; this keeps xl3-py
-    parity without touching the corpus."""
+    """yaml.safe_load with a recovery pass for fixture prose that PyYAML
+    rejects as a plain scalar. Other YAML libraries used by xl3 tooling
+    accept these descriptions; this keeps xl3-py parity without touching
+    the corpus."""
     try:
         return yaml.safe_load(text) or {}
     except yaml.scanner.ScannerError:
@@ -32,19 +30,22 @@ def _lenient_yaml_load(text: str) -> Any:
         return yaml.safe_load(fixed) or {}
 
 
-_RESERVED_LEAD = re.compile(r"^(\s*[A-Za-z_][\w-]*:\s+)([`@][^\n]*)$", re.MULTILINE)
+_PROBLEM_PLAIN_SCALAR = re.compile(
+    r"^(\s*[A-Za-z_][\w-]*:\s+)(?!['\"\[\{>|])((?:[`@][^\n]*|[^\n]*:\s+[^\n]*))$",
+    re.MULTILINE,
+)
 
 
 def _quote_reserved_starts(text: str) -> str:
-    """Wrap any `key: <reserved-lead>...` line in double quotes, escaping
-    embedded double quotes. Leaves already-quoted values alone."""
+    """Wrap PyYAML-hostile `key: plain scalar` lines in double quotes,
+    escaping embedded double quotes. Leaves already-quoted values alone."""
 
     def repl(m: re.Match[str]) -> str:
         prefix, value = m.group(1), m.group(2)
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'{prefix}"{escaped}"'
 
-    return _RESERVED_LEAD.sub(repl, text)
+    return _PROBLEM_PLAIN_SCALAR.sub(repl, text)
 
 FixtureKind = Literal["static", "error", "dynamic"]
 

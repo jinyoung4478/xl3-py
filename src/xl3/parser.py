@@ -208,6 +208,16 @@ def _cell_effective_text(cell: Cell) -> str:
     return str(v)
 
 
+def _cell_formula_text(cell: Cell | None) -> str | None:
+    """Return an openpyxl formula string (`=...`) from the formula view."""
+    if cell is None:
+        return None
+    v = cell.value
+    if isinstance(v, str) and v.startswith("="):
+        return v
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Reserved sheet detection (ADR-0011)
 # ---------------------------------------------------------------------------
@@ -232,6 +242,11 @@ def parse_template(template_bytes: bytes) -> ParsedTemplate:
     """Parse a template workbook. Read with `data_only=True` so formula
     cells expose their cached results (per ADR-0017)."""
     wb = load_workbook(BytesIO(template_bytes), data_only=True, rich_text=True)
+    # ADR-0073 / ADR-0046: formula cached results are not template text.
+    # Keep a formula view so marker/directive recognition can ignore formula
+    # cells while still preserving the formula value when the renderer clones
+    # a template row.
+    formula_wb = load_workbook(BytesIO(template_bytes), data_only=False, rich_text=False)
 
     meta = TemplateMeta()
     if "__config__" in wb.sheetnames:
@@ -262,7 +277,8 @@ def parse_template(template_bytes: bytes) -> ParsedTemplate:
                     f'Sheet name "{sn}" is reserved (matches __<name>__ pattern)',
                 )
             continue
-        sheets.append(_parse_sheet_template(wb[sn]))
+        formula_ws = formula_wb[sn] if sn in formula_wb.sheetnames else None
+        sheets.append(_parse_sheet_template(wb[sn], formula_ws))
 
     return ParsedTemplate(
         meta=meta,
@@ -675,6 +691,8 @@ def _classify_cells(rows_cells: dict[int, list[TemplateCell]]) -> tuple[
     for r, cells in rows_cells.items():
         nonempty_cols[r] = {c.col for c in cells}
         expr_cols[r] = set()
+        first_data_marker_cell: TemplateCell | None = None
+        first_data_marker_body = ""
         for c in cells:
             if c.is_subtotal_cell:
                 # ADR-0038: validate aggregate shape eagerly so authors get
@@ -696,6 +714,24 @@ def _classify_cells(rows_cells: dict[int, list[TemplateCell]]) -> tuple[
                 if c.has_data_marker:
                     data_marker_cells.setdefault(r, []).append(c)
                     data_rows.add(r)
+                    if first_data_marker_cell is None:
+                        first_data_marker_cell = c
+                        for seg in c.template.segments:
+                            if isinstance(seg, ExprSegment) and expression_has_data_marker_ref(
+                                seg.expr
+                            ):
+                                first_data_marker_body = seg.body.strip()
+                                break
+        if r in subtotal_cells and first_data_marker_cell is not None:
+            addr = f"{_col_letters(first_data_marker_cell.col)}{r}"
+            raise xtl_error(
+                "xl3/subtotal/mixed-row",
+                f"@subtotal row at {addr} references current-row column "
+                f"{{{{ {first_data_marker_body} }}}} outside an aggregate; "
+                "a @subtotal row binds to a group boundary and may not carry "
+                "per-row [Column] references. Move the value into the aggregate "
+                "(e.g. SUM([Amount])), or onto a data row.",
+            )
     return (
         directive_cells,
         subtotal_cells,
@@ -993,7 +1029,7 @@ def _parse_directive_cell(tc: TemplateCell) -> Any:
         raise xtl_error(code, msg) from e
 
 
-def _parse_sheet_template(ws: Any) -> SheetTemplate:
+def _parse_sheet_template(ws: Any, formula_ws: Any | None = None) -> SheetTemplate:
     """Walk a template sheet row-by-row, classify cells, detect data
     block(s) per ADRs 0066–0069, attach directives, and produce a plan
     plus list of outside cells.
@@ -1002,12 +1038,36 @@ def _parse_sheet_template(ws: Any) -> SheetTemplate:
     rows_cells: dict[int, list[TemplateCell]] = {}
     if ws.max_row is None:
         return st
-    for row in ws.iter_rows(values_only=False):
-        for cell in row:
-            text = _cell_effective_text(cell)
-            if text == "":
+    max_row = max(ws.max_row or 0, formula_ws.max_row if formula_ws is not None else 0)
+    max_col = max(ws.max_column or 0, formula_ws.max_column if formula_ws is not None else 0)
+    for row_idx in range(1, max_row + 1):
+        for col_idx in range(1, max_col + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            formula_text = _cell_formula_text(
+                formula_ws.cell(row=row_idx, column=col_idx)
+                if formula_ws is not None
+                else None
+            )
+            text = "" if formula_text is not None else _cell_effective_text(cell)
+            if text == "" and formula_text is None:
                 continue
             tpl = parse_cell_template(text)
+            if formula_text is not None:
+                # ADR-0073: formula cached results are not template text.
+                # For Stage 1, keep non-marker cached values as inert cell
+                # values because openpyxl cannot round-trip formula caches
+                # when writing. Marker-looking caches must not leak into the
+                # output value path; preserve the formula string instead.
+                native_value = (
+                    formula_text
+                    if cell.value is None
+                    or (isinstance(cell.value, str) and "{{" in cell.value)
+                    else cell.value
+                )
+            elif not isinstance(cell.value, (str, CellRichText)):
+                native_value = cell.value
+            else:
+                native_value = None
             refs: set[str] = set()
             has_per_row = False
             has_data_marker = False
@@ -1019,21 +1079,17 @@ def _parse_sheet_template(ws: Any) -> SheetTemplate:
                     if expression_has_data_marker_ref(seg.expr):
                         has_data_marker = True
             tc = TemplateCell(
-                row=cell.row,
-                col=cell.column,
+                row=row_idx,
+                col=col_idx,
                 template=tpl,
                 referenced_columns=refs,
                 has_per_row_ref=has_per_row,
                 has_data_marker=has_data_marker,
                 raw_text=text,
-                native_value=(
-                    cell.value
-                    if not isinstance(cell.value, (str, CellRichText))
-                    else None
-                ),
+                native_value=native_value,
             )
-            rows_cells.setdefault(cell.row, []).append(tc)
-            st.max_col = max(st.max_col, cell.column)
+            rows_cells.setdefault(row_idx, []).append(tc)
+            st.max_col = max(st.max_col, col_idx)
 
     if not rows_cells:
         return st

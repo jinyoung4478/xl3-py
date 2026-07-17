@@ -49,6 +49,7 @@ XtlErrorCode = Literal[
     "xl3/group/missing-key",
     "xl3/subtotal/outside-group",
     "xl3/subtotal/bad-aggregate",
+    "xl3/subtotal/mixed-row",
     # Lists
     "xl3/lists/missing-reference",
     # Lists (ADR-0057)

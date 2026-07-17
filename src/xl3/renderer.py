@@ -25,6 +25,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection
 
 from .directives import (
     JoinDirective,
@@ -341,11 +342,13 @@ def _render_sheet(
     # template text gets blanked before we re-emit outside cells with their
     # parsed template values).
     template_rows_used: set[int] = set()
+    subtotal_template_rows: set[int] = set()
     for plan in st.plan:
         template_rows_used.add(plan.template_row)
         if isinstance(plan, DataRowPlan):
             for srp in plan.subtotal_rows:
                 template_rows_used.add(srp.template_row)
+                subtotal_template_rows.add(srp.template_row)
     template_rows_used |= st.directive_only_rows
     template_rows_used |= {oc.row for oc in st.outside_cells}
     if template_rows_used:
@@ -407,7 +410,13 @@ def _render_sheet(
     # overwrite whatever (cleared/shifted) state lives at those coordinates.
     if st.outside_cells:
         _emit_outside_cells(
-            ws, st.outside_cells, style_cache, sources, config_values, inputs
+            ws,
+            st.outside_cells,
+            st.directive_only_rows - subtotal_template_rows,
+            style_cache,
+            sources,
+            config_values,
+            inputs,
         )
 
 
@@ -443,9 +452,22 @@ def _apply_style(cell: Cell, style: Any) -> None:
     cell.number_format = fmt
 
 
+def _clear_cell_value_and_style(cell: Cell) -> None:
+    cell.value = None
+    cell.hyperlink = None
+    cell.comment = None
+    cell.font = Font()
+    cell.fill = PatternFill()
+    cell.border = Border()
+    cell.alignment = Alignment()
+    cell.protection = Protection()
+    cell.number_format = "General"
+
+
 def _emit_outside_cells(
     ws: Any,
     outside_cells: list[OutsideCell],
+    directive_only_rows: set[int],
     style_cache: dict[tuple[int, int], Any],
     sources: dict[str, SourceData],
     config_values: dict[str, Any],
@@ -467,12 +489,22 @@ def _emit_outside_cells(
         named_sources=_build_named_sources_view(sources),
         active_row_set=list(default_source.rows) if default_source else None,
     )
+    target_rows = {
+        (oc.row, oc.col): oc.row - sum(1 for r in directive_only_rows if r < oc.row)
+        for oc in outside_cells
+    }
     for oc in outside_cells:
+        target_row = target_rows[(oc.row, oc.col)]
+        if target_row != oc.row:
+            _clear_cell_value_and_style(ws.cell(row=oc.row, column=oc.col))
+
+    for oc in outside_cells:
+        target_row = target_rows[(oc.row, oc.col)]
         value = _render_cell(oc.cell, ctx)
         style = style_cache.get((oc.row, oc.col))
         if oc.cell.template.is_single_expression and style is not None:
             value = _apply_numfmt_coercion(value, style[4])
-        target = _write_cell_value(ws, oc.row, oc.col, value)
+        target = _write_cell_value(ws, target_row, oc.col, value)
         _apply_style(target, style)
 
 
